@@ -20,3 +20,9 @@ products/
 .idea
 cmake-build-*
 ignore/
+
+planning.md
+
+# symlinks to the local standalone builds
+/Dexed.app
+/Ambidex.app

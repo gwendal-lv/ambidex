@@ -37,6 +37,7 @@ option(JUCE_BUILD_EXAMPLES "Build JUCE Examples" OFF)
 add_subdirectory(libs)
 add_subdirectory(assets)
 add_subdirectory(source)
+add_subdirectory(ambidex)
 
 # uncomment to enable warnings are errors,
 # suppress warnings (or remove when fixed)
