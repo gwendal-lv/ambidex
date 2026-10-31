@@ -1,45 +1,8 @@
-set(BaseTargetName Dexed)
+# Dexed's engine and editor, as an INTERFACE library: its sources are compiled
+# into the app target that links it (with that target's JUCE configuration).
+add_library(dexed INTERFACE)
 
-set(DEXED_JUCE_FORMATS Standalone)
-
-if(NOT DEXED_SKIP_VST3)
-  list(APPEND DEXED_JUCE_FORMATS VST3)
-endif()
-
-if (APPLE)
-  list(APPEND DEXED_JUCE_FORMATS AU)
-endif()
-
-message(STATUS "Building Dexed in formats: ${DEXED_JUCE_FORMATS}")
-
-juce_add_plugin("${BaseTargetName}"
-        VERSION "1.1.0"
-        ICON_BIG "../assets/ui/dexedIcon.png"
-        ICON_SMALL "../assets/ui/dexedIcon.png"
-        COMPANY_NAME "Digital Suburban"
-        IS_SYNTH TRUE
-        NEEDS_MIDI_INPUT TRUE
-        NEEDS_MIDI_OUTPUT TRUE
-        IS_MIDI_EFFECT FALSE
-        EDITOR_WANTS_KEYBOARD_FOCUS TRUE
-        PLUGIN_MANUFACTURER_CODE DGSB
-        PLUGIN_CODE Dexd
-        FORMATS ${DEXED_JUCE_FORMATS}
-        PRODUCT_NAME "Dexed"
-        DESCRIPTION "Dexed FM Synth"
-        BUNDLE_ID "com.digitalsuburban.Dexed"
-        COPY_PLUGIN_AFTER_BUILD TRUE
-)
-
-clap_juce_extensions_plugin(TARGET ${BaseTargetName}
-        CLAP_ID "com.digital-suburban.dexed"
-        CLAP_FEATURES instrument FM DX7)
-
-juce_generate_juce_header(${PROJECT_NAME})
-
-include_directories(../libs/MTS-ESP/Client .)
-
-target_sources(${BaseTargetName} PRIVATE
+set(DEXED_SOURCES
 	msfa/dx7note.cc
 	msfa/env.cc
 	msfa/exp2.cc
@@ -91,6 +54,15 @@ target_sources(${BaseTargetName} PRIVATE
     # until MTS-ESP has is own cmake project
     ../libs/MTS-ESP/Client/libMTSClient.cpp
 )
+# (interface sources are compiled in the linking target's directory)
+list(TRANSFORM DEXED_SOURCES PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
+
+target_sources(dexed INTERFACE ${DEXED_SOURCES})
+
+target_include_directories(dexed INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${PROJECT_SOURCE_DIR}/libs/MTS-ESP/Client
+)
 
 if(DEXED_NO_ALSA)
     set(DEXED_ALSA FALSE)
@@ -101,7 +73,7 @@ endif()
 
 find_package(Jack QUIET)
 
-target_compile_definitions(${BaseTargetName} PUBLIC
+target_compile_definitions(dexed INTERFACE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
@@ -112,8 +84,7 @@ target_compile_definitions(${BaseTargetName} PUBLIC
     # JUCE_COREGRAPHICS_RENDER_WITH_MULTIPLE_PAINT_CALLS=1     # REVERT BACK SINCE THERE IS AN ISSUE WITH JUCE 7.0.0
 )
 
-target_link_libraries(${BaseTargetName} 
-PRIVATE
+target_link_libraries(dexed INTERFACE
     juce::juce_audio_basics
     juce::juce_audio_devices
     juce::juce_audio_formats
@@ -128,8 +99,7 @@ PRIVATE
     juce::juce_gui_extra
     surgesynthteam_tuningui
     tuning-library
+    # DexedAudioProcessor implements clap_juce_extensions::clap_properties
+    clap_juce_extensions
     DexedResources
-PUBLIC
-    juce::juce_recommended_config_flags
-    juce::juce_recommended_lto_flags
 )

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(Dexed VERSION 1.1.0)
+project(Ambidex VERSION 0.1.0)
 
 #Compile commands, useful for some IDEs like VS-Code
 set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE)
@@ -29,10 +29,8 @@ add_subdirectory(libs/clap-juce-extensions EXCLUDE_FROM_ALL)
 set_property(GLOBAL PROPERTY USE_FOLDERS YES)
 option(JUCE_ENABLE_MODULE_SOURCE_GROUPS "Enable Module Source Groups" ON)
 
-#set any of these to "ON" if you want to build one of the juce examples
-#or extras (Projucer/AudioPluginHost, etc):
-option(JUCE_BUILD_EXTRAS "Build JUCE Extras" OFF)
-option(JUCE_BUILD_EXAMPLES "Build JUCE Examples" OFF)
+# (JUCE's examples and extras are not vendored: leave JUCE_BUILD_EXAMPLES and
+# JUCE_BUILD_EXTRAS off)
 
 add_subdirectory(libs)
 add_subdirectory(assets)
@@ -62,6 +60,3 @@ target_compile_options(${PROJECT_NAME} PUBLIC
         #  replace cxxx with /wdxxx to supress them)
         )
 endif()
-
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/assets/installers")
-include(installer)
