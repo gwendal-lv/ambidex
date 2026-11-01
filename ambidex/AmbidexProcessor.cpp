@@ -5,8 +5,8 @@
 #include "AmbidexEditor.h"
 
 namespace {
-// Default presets (factory presets, see PresetLibrary.cpp)
-const String defaultPresetNames[] = { "Laurie", "Pharoh" };
+// Default presets A and B, when there is no saved session (factory presets, in ambidex/presets)
+const String defaultPresetNames[] = { "Chorus Rhodes", "Pharoh" };
 // If they were deleted: voices from Dexed's startup cartridge (Dexed_01.syx)
 constexpr int defaultPrograms[] = { 1, 3 }; // "2. LAURIE", "4. PHAROH"
 

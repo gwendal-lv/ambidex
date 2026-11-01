@@ -84,9 +84,9 @@ Ambidex's data folder:
 Preset files can be copied to back them up, or to share them: they appear in the menu once copied
 into this folder.
 
-On first launch, the folder is created with the factory presets: "Laurie" and "Pharoh" (the default
-presets A and B, without FX), and a few presets showing the FX chain ("Chorus Rhodes", "Driven
-Bass", "Space Bells", "Phased Strings", "Flanged Clav", "Filtered Pad"). To get the factory presets
+On first launch, the folder is created with the factory presets: "Laurie", "Pharoh", "Chorus
+Rhodes", "Driven Bass", "Space Bells", "Phased Strings", "Flanged Clav" and "Filtered Pad". Ambidex
+then starts with "Chorus Rhodes" as preset A, and "Pharoh" as preset B. To get the factory presets
 back, delete (or rename) the `Presets` folder: it is created again at the next launch.
 
 The automatic save (presets A and B, and the audio and MIDI settings) is a separate file:

@@ -13,7 +13,7 @@ Presets A and B are chosen from a library of Ambidex presets, which hold the FM 
 voice), Dexed's settings and the FX settings. Dexed's cartridges are only used to load FM patches.
 Presets A and B, with their unsaved edits, are restored at each launch: see `doc/Presets.md`.
 
-Default presets: A = "Laurie", B = "Pharoh" (factory presets, with the "2. LAURIE" and "4. PHAROH" voices of Dexed's `Dexed_01.syx` cartridge).
+Default presets: A = "Chorus Rhodes", B = "Pharoh" (factory presets).
 
 Based on Dexed
 --------------
