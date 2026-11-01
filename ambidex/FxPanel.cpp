@@ -12,24 +12,29 @@ constexpr int maxKnobsPerModule = 5;
 // As in Dexed's editor
 constexpr int knobSize = 34;
 constexpr int labelHeight = 14;
-constexpr int headerHeight = 28;
-constexpr int chainSwitchWidth = 64;
+constexpr int headerHeight = 42;
+constexpr int chainSwitchWidth = 56;
+constexpr int outputLabelWidth = 44;
+
+Slider* createKnob(int param, const String& title) {
+    const auto& paramInfo = fx::getParamInfo(param);
+    auto* knob = new Slider(Slider::RotaryVerticalDrag, Slider::NoTextBox);
+    knob->setTitle(title);
+    knob->setRange(0.0, 1.0);
+    knob->setDoubleClickReturnValue(true, fx::toNormalised(param, paramInfo.defaultValue));
+    knob->textFromValueFunction = [param](double normalised) {
+        return fx::getParamInfo(param).toText(fx::fromNormalised(param, (float) normalised));
+    };
+    knob->setPopupDisplayEnabled(true, true, nullptr);
+    return knob;
+}
 } // namespace
 
 //==============================================================================
 FxModule::FxModule(int module) : info(fx::getModuleInfo(module)) {
     for (int i = 0; i < info.numParams; ++i) {
         const int param = info.firstParam + i;
-        const auto& paramInfo = fx::getParamInfo(param);
-
-        auto* knob = knobs.add(new Slider(Slider::RotaryVerticalDrag, Slider::NoTextBox));
-        knob->setTitle(info.name.toLowerCase() + " " + paramInfo.label.toLowerCase());
-        knob->setRange(0.0, 1.0);
-        knob->setDoubleClickReturnValue(true, fx::toNormalised(param, paramInfo.defaultValue));
-        knob->textFromValueFunction = [param](double normalised) {
-            return fx::getParamInfo(param).toText(fx::fromNormalised(param, (float) normalised));
-        };
-        knob->setPopupDisplayEnabled(true, true, nullptr);
+        auto* knob = knobs.add(createKnob(param, info.name.toLowerCase() + " " + fx::getParamInfo(param).label.toLowerCase()));
         addAndMakeVisible(knob);
     }
 }
@@ -95,6 +100,13 @@ FxPanel::FxPanel(AmbidexAudioProcessor& processor) : ambidex(processor) {
     };
     addAndMakeVisible(chainSwitch);
 
+    outputKnob.reset(createKnob(fx::outputGain, "output gain"));
+    outputKnob->onValueChange = [this] {
+        if (editableEngine >= 0)
+            ambidex.setFxValue(editableEngine, fx::outputGain, fx::fromNormalised(fx::outputGain, (float) outputKnob->getValue()));
+    };
+    addAndMakeVisible(*outputKnob);
+
     for (int m = 0; m < fx::numModules; ++m) {
         auto* module = modules.add(new FxModule(m));
         for (int i = 0; i < module->getNumKnobs(); ++i)
@@ -117,6 +129,14 @@ Rectangle<int> FxPanel::getModulesArea() const {
     return getLocalBounds().withTrimmedTop(headerHeight);
 }
 
+Rectangle<int> FxPanel::getHeaderArea() const {
+    return getLocalBounds().removeFromTop(headerHeight).withTrimmedTop(moduleGap).reduced(moduleGap + modulePadding, 0);
+}
+
+Rectangle<int> FxPanel::getOutputArea() const {
+    return getHeaderArea().removeFromRight(outputLabelWidth + knobSize);
+}
+
 void FxPanel::showValues(int newEditableEngine) {
     const bool wasEditable = editableEngine >= 0;
     editableEngine = newEditableEngine;
@@ -132,6 +152,11 @@ void FxPanel::showValues(int newEditableEngine) {
         }
         updateBypassedLook(*module);
     }
+
+    outputKnob->setEnabled(editableEngine >= 0);
+    outputKnob->setValue(editableEngine >= 0 ? fx::toNormalised(fx::outputGain, ambidex.getFxValue(editableEngine, fx::outputGain))
+                                             : ambidex.getMorphedFxValueNormalised(fx::outputGain),
+                         dontSendNotification);
 
     if (wasEditable != (editableEngine >= 0))
         repaint();
@@ -157,14 +182,21 @@ void FxPanel::paint(Graphics& g) {
     static const Typeface::Ptr bold = Typeface::createSystemTypefaceFor(BinaryData::NotoSansBold_ttf,
                                                                         BinaryData::NotoSansBold_ttfSize);
     const bool on = chainSwitch.getToggleState();
-    auto header = getLocalBounds().removeFromTop(headerHeight).withTrimmedTop(moduleGap).reduced(moduleGap + modulePadding, 0);
+    auto header = getHeaderArea();
     g.setFont(FontOptions(bold).withHeight(14.0f));
     g.setColour(DXLookNFeel::fillColour);
     g.drawText("FX CHAIN", header, Justification::centredLeft);
+
+    g.setFont(FontOptions(11.0f));
+    g.setColour(Colours::white.withAlpha(0.75f));
+    g.drawText(fx::getParamInfo(fx::outputGain).label, getOutputArea().removeFromLeft(outputLabelWidth),
+               Justification::centredRight);
+
     if (!on) {
         g.setFont(FontOptions(12.0f));
         g.setColour(Colours::white.withAlpha(0.6f));
-        g.drawText("bypassed", header.withTrimmedRight(chainSwitchWidth + 8), Justification::centredRight);
+        g.drawText("bypassed", chainSwitch.getBounds().withRightX(chainSwitch.getX() - 6).withLeft(header.getX()),
+                   Justification::centredRight);
     }
 }
 
@@ -175,12 +207,16 @@ void FxPanel::paintOverChildren(Graphics& g) {
         // (as the overlay on the Dexed editor)
         g.setColour(DXLookNFeel::background.darker(0.6f).withAlpha(0.6f));
         g.fillRect(getModulesArea());
+        g.fillRect(getOutputArea());
     }
 }
 
 void FxPanel::resized() {
-    auto header = getLocalBounds().removeFromTop(headerHeight).withTrimmedTop(moduleGap).reduced(moduleGap, 0);
-    chainSwitch.setBounds(header.removeFromRight(chainSwitchWidth).reduced(0, 1));
+    // FX CHAIN ... [ON/OFF]  Output (knob)
+    auto header = getHeaderArea();
+    outputKnob->setBounds(header.removeFromRight(knobSize).withSizeKeepingCentre(knobSize, knobSize));
+    header.removeFromRight(outputLabelWidth + 12);
+    chainSwitch.setBounds(header.removeFromRight(chainSwitchWidth).withSizeKeepingCentre(chainSwitchWidth, 24));
 
     auto area = getModulesArea().reduced(moduleGap);
     const int moduleHeight = (area.getHeight() - (fx::numModules - 1) * moduleGap) / fx::numModules;

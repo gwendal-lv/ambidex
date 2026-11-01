@@ -20,6 +20,7 @@ enum Param {
     modulationRate, modulationDepth, modulationFeedback, modulationCharacter, modulationMix,
     delayTime, delayFeedback, delayTone, delaySpread, delayMix,
     reverbSize, reverbDamping, reverbWidth, reverbMix,
+    outputGain, // (after the modules, not part of one)
     numParams
 };
 
@@ -47,7 +48,7 @@ struct ModuleInfo {
 };
 
 const ModuleInfo& getModuleInfo(int module);
-/** The module a parameter belongs to. */
+/** The module a parameter belongs to (-1 for the output gain). */
 int getModuleOf(int param);
 
 } // namespace fx

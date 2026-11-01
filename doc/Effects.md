@@ -8,6 +8,8 @@ The chain has six modules, always in this order:
 
 **Distortion → Filter → Compressor → Modulation → Delay → Reverb**
 
+followed by the output gain and a soft clipper.
+
 Morphing
 --------
 
@@ -122,15 +124,26 @@ Notes:
   into a flanger (1.5 ms); the second half crossfades the flanger into a 6-stage phaser (centred
   on 1 kHz). Rate, depth and feedback apply to both.
 * **Delay.** The time is set in milliseconds (the standalone app has no tempo to sync to). When it
-  changes, it glides like a tape delay (pitch bend instead of clicks). With Spread at 100%, the
-  input goes to the left line only, and each line feeds the other one (ping-pong).
+  changes (knob or morph), the delay starts reading at the new time as well, and crossfades to it
+  over 30 ms: the echoes move to the new time without any pitch change (unlike a tape delay, whose
+  pitch bends while its time changes, which sounds odd when morphing). While the time keeps
+  changing, the crossfades follow each other. With Spread at 100%, the input goes to the left line
+  only, and each line feeds the other one (ping-pong).
 * **Reverb.** Freeverb, without its freeze mode (a switch).
+
+Output gain
+-----------
+
+The **Output** knob, at the top right of the FX panel, sets the level of the preset after the FX
+(-24 to +12 dB, 0 dB by default), e.g. to balance a preset with heavy FX against a dry one. Like the
+other knobs, it is saved in the preset, and morphed (in dB) between A and B. The ON/OFF switch
+doesn't bypass it.
 
 Output soft clipper
 -------------------
 
-After the reverb, the output goes through a fixed soft clipper (no controls, always on, even when
-all the modules are bypassed), so that loud settings don't clip harshly:
+After the output gain, the signal goes through a fixed soft clipper (no controls, always on, even
+when all the modules are bypassed), so that loud settings don't clip harshly:
 
 * up to 0.7 (about -3 dBFS), the signal is untouched;
 * above, peaks are rounded off by a tanh curve that tends to 1 (0 dBFS) without reaching it. The

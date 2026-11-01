@@ -73,6 +73,23 @@ To test on another Linux machine with the same CPU architecture (e.g. a Raspberr
 `scripts/run-remote.sh <ssh-host> [debug|release]` copies the built app to `~/ambidex-dev` on that
 machine and runs it on its display.
 
+Factory presets
+---------------
+
+The factory presets are the preset files in `ambidex/presets/`: they are embedded in the app when
+it is built, and copied into the user's preset library on first launch (when the library folder
+doesn't exist yet). To change them, edit and save presets in Ambidex, then copy them from your local
+library into the repository:
+
+```
+scripts/update-factory-presets.sh                  # updates all the factory presets
+scripts/update-factory-presets.sh "My New Preset"  # adds (or updates) a preset
+```
+
+Then rebuild, and commit the changed files. To delete a factory preset, delete its file from
+`ambidex/presets/` (and re-run CMake). Existing libraries are not updated: to get the new factory
+presets, delete (or rename) the local `Presets` folder (see `doc/Presets.md`).
+
 Dependencies are vendored in `libs/` (no git submodules): JUCE 8.0.11, clap-juce-extensions,
 MTS-ESP, tuning-library and surgesynthteam_tuningui. JUCE is trimmed to `modules/` and
 `extras/Build/` (no examples, no Projucer or other extras), so `JUCE_BUILD_EXAMPLES` and

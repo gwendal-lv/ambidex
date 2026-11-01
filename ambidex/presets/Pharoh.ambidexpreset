@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<ambidexPreset formatVersion="1" name="Pharoh">
+  <fm voice="155.iYRFoLFRHAvI.Dv.C...AHE.B.fCicRFgL1Q.AvI..v.C....PC.B.fCiwzXuLFVfAvI..v.C....vE.A.fCicRFgL1Q.AvI.Dv.C...ALF.B.vAiYRFjLFRHAvI..v.C....3D.D.vAiwzXuLFVfAvI..v.C.......A.vAT80W7HiLxHyGFDPI.......AX.ERAI0SHABHf.B"
+      engineState="0."/>
+  <fx distortionDrive="12.0" distortionShape="0.0" distortionTone="8000.0"
+      distortionMix="0.0" filterCutoff="2000.0" filterResonance="0.7070000171661377"
+      filterType="0.0" filterMix="0.0" compressorThreshold="-18.0"
+      compressorRatio="4.0" compressorAttack="10.0" compressorRelease="150.0"
+      compressorMix="0.0" modulationRate="0.5" modulationDepth="0.5"
+      modulationFeedback="0.0" modulationCharacter="0.0" modulationMix="0.0"
+      delayTime="350.0" delayFeedback="0.3499999940395355" delayTone="6000.0"
+      delaySpread="0.0" delayMix="0.0" reverbSize="0.6000000238418579"
+      reverbDamping="0.5" reverbWidth="1.0" reverbMix="0.0"/>
+</ambidexPreset>

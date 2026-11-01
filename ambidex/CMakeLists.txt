@@ -38,9 +38,19 @@ set_source_files_properties(${PROJECT_SOURCE_DIR}/source/PluginProcessor.cpp PRO
     COMPILE_DEFINITIONS createPluginFilter=createDexedPluginFilter
 )
 
+# Factory presets: copied into the user's preset library on first launch (see
+# scripts/update-factory-presets.sh to update them from a local library)
+file(GLOB AMBIDEX_FACTORY_PRESETS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/presets/*.ambidexpreset)
+juce_add_binary_data(AmbidexFactoryPresets
+    HEADER_NAME AmbidexFactoryPresets.h
+    NAMESPACE AmbidexFactoryPresets
+    SOURCES ${AMBIDEX_FACTORY_PRESETS}
+)
+
 target_link_libraries(Ambidex
 PRIVATE
     dexed
+    AmbidexFactoryPresets
     juce::juce_dsp
 PUBLIC
     juce::juce_recommended_config_flags

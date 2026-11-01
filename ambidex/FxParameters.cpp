@@ -93,6 +93,8 @@ std::vector<ParamInfo> createParamInfos() {
     set(reverbWidth, "reverbWidth", "Width", linearRange(0.0f, 1.0f), 1.0f, percentText);
     set(reverbMix, "reverbMix", "Mix", linearRange(0.0f, 1.0f), 0.0f, percentText);
 
+    set(outputGain, "outputGain", "Output", linearRange(-24.0f, 12.0f), 0.0f, decibelText);
+
     return infos;
 }
 
@@ -116,6 +118,8 @@ const ModuleInfo& getModuleInfo(int module) {
 }
 
 int getModuleOf(int param) {
+    if (param == outputGain)
+        return -1;
     for (int module = numModules - 1; module > 0; --module)
         if (param >= getModuleInfo(module).firstParam)
             return module;

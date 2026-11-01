@@ -32,8 +32,8 @@ private:
 /**
  * The FX chain, shown on the right of the Dexed editor. Its knobs edit the FX
  * values of the engine being edited. While morphing, they show (greyed) the
- * values heard, which move with the morph slider. The switch in the header
- * bypasses the whole chain.
+ * values heard, which move with the morph slider. The header holds the switch
+ * that bypasses the whole chain, and the output gain.
  */
 class FxPanel : public Component {
 public:
@@ -53,9 +53,13 @@ private:
     void updateBypassedLook(FxModule& module);
     void updateChainSwitch();
     Rectangle<int> getModulesArea() const;
+    Rectangle<int> getHeaderArea() const;
+    // The output gain knob and its label
+    Rectangle<int> getOutputArea() const;
 
     AmbidexAudioProcessor& ambidex;
     int editableEngine = -1;
     TextButton chainSwitch;
+    std::unique_ptr<Slider> outputKnob;
     OwnedArray<FxModule> modules;
 };

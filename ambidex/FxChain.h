@@ -11,7 +11,8 @@
  * The global FX chain, applied to the mix of both engines: distortion, filter,
  * compressor, modulation, delay and reverb, in this fixed order (see
  * doc/Effects.md). A module whose mix is at 0 is bypassed, and uses no CPU.
- * The output then goes through a soft clipper, which keeps it below 0 dBFS.
+ * The output then goes through a gain and a soft clipper, which keeps it below
+ * 0 dBFS.
  */
 class FxChain {
 public:
@@ -77,9 +78,14 @@ private:
     // Delay
     std::vector<float> delayLines[numChannels];
     int delayWritePosition = 0;
-    float delaySamples = 0.0f;
-    float delayGlide = 1.0f; // per sample
+    // When the delay time changes, the delay reads at the new time too, and
+    // crossfades to it (a tape-like glide would bend the pitch)
+    float delaySamples = 0.0f, nextDelaySamples = 0.0f;
+    float delayCrossfade = 0.0f; // 0 = not crossfading
+    float delayCrossfadeStep = 1.0f; // per sample
     float delayToneState[numChannels] {};
 
     Reverb reverbDsp;
+
+    float previousOutputGain = 1.0f;
 };

@@ -6,9 +6,11 @@
 using namespace fx;
 
 namespace {
-// Glide time of the parameters, and of the delay time
+// Glide time of the parameters
 constexpr double smoothingSeconds = 0.05;
 constexpr float maxDelayMs = 2000.0f;
+// Crossfade from the previous delay time to a new one
+constexpr double delayCrossfadeSeconds = 0.03;
 
 // Modulation: the first half of the "character" knob shortens the delay from
 // chorus to flanger, the second half crossfades the flanger to the phaser
@@ -79,7 +81,7 @@ void FxChain::prepare(double newSampleRate) {
 
     for (auto& line : delayLines)
         line.assign((size_t) std::ceil(maxDelayMs * 0.001 * sampleRate) + 2, 0.0f);
-    delayGlide = 1.0f - (float) std::exp(-1.0 / (smoothingSeconds * sampleRate));
+    delayCrossfadeStep = (float) (1.0 / (delayCrossfadeSeconds * sampleRate));
 
     reverbDsp.setSampleRate(sampleRate);
 
@@ -116,7 +118,8 @@ void FxChain::resetModule(int module) {
             for (auto& line : delayLines)
                 std::fill(line.begin(), line.end(), 0.0f);
             std::fill(std::begin(delayToneState), std::end(delayToneState), 0.0f);
-            delaySamples = get(delayTime) * 0.001f * (float) sampleRate;
+            delaySamples = nextDelaySamples = get(delayTime) * 0.001f * (float) sampleRate;
+            delayCrossfade = 0.0f;
             break;
         case reverb:
             reverbDsp.reset();
@@ -131,11 +134,14 @@ void FxChain::process(AudioBuffer<float>& buffer, const Values& normalisedValues
     jassert(buffer.getNumChannels() == numChannels);
 
     for (int param = 0; param < numParams; ++param) {
-        if (valuesInitialised)
+        // (the delay crossfades to a new delay time by itself)
+        if (valuesInitialised && param != delayTime)
             smoothedValues[(size_t) param].setTargetValue(normalisedValues[(size_t) param]);
         else
             smoothedValues[(size_t) param].setCurrentAndTargetValue(normalisedValues[(size_t) param]);
     }
+    if (!valuesInitialised)
+        previousOutputGain = Decibels::decibelsToGain(fromNormalised(outputGain, normalisedValues[outputGain]));
     valuesInitialised = true;
 
     const int numSamples = buffer.getNumSamples();
@@ -188,6 +194,14 @@ void FxChain::processSubBlock(float* const* channels, int numSamples) {
         else
             mixWet(channels, numSamples, module, mix);
     }
+
+    // Output gain (ramped over the sub-block)
+    const float gain = Decibels::decibelsToGain(get(outputGain));
+    const float gainStep = (gain - previousOutputGain) / (float) numSamples;
+    for (int ch = 0; ch < numChannels; ++ch)
+        for (int i = 0; i < numSamples; ++i)
+            channels[ch][i] *= previousOutputGain + gainStep * (float) (i + 1);
+    previousOutputGain = gain;
 }
 
 FxChain::Mix FxChain::getMix(int module, float mixValue) {
@@ -368,18 +382,40 @@ void FxChain::processDelay(const float* const* input, int numSamples) {
     float* wetL = wetBuffer.getWritePointer(0);
     float* wetR = wetBuffer.getWritePointer(1);
 
-    for (int i = 0; i < numSamples; ++i) {
-        // (the delay time glides, like a tape delay)
-        delaySamples += (targetDelaySamples - delaySamples) * delayGlide;
-
-        float readPosition = (float) delayWritePosition - delaySamples;
-        if (readPosition < 0.0f)
-            readPosition += (float) size;
-        const int index0 = (int) readPosition;
+    // Reads both lines, the given number of samples ago (linear interpolation)
+    auto read = [this, size, lineL, lineR](float samplesAgo, float& left, float& right) {
+        float position = (float) delayWritePosition - samplesAgo;
+        if (position < 0.0f)
+            position += (float) size;
+        const int index0 = (int) position;
         const int index1 = index0 + 1 < size ? index0 + 1 : 0;
-        const float fraction = readPosition - (float) index0;
-        const float delayedL = lineL[index0] + (lineL[index1] - lineL[index0]) * fraction;
-        const float delayedR = lineR[index0] + (lineR[index1] - lineR[index0]) * fraction;
+        const float fraction = position - (float) index0;
+        left = lineL[index0] + (lineL[index1] - lineL[index0]) * fraction;
+        right = lineR[index0] + (lineR[index1] - lineR[index0]) * fraction;
+    };
+
+    for (int i = 0; i < numSamples; ++i) {
+        // A new delay time is reached by crossfading to it (no pitch change),
+        // one crossfade at a time
+        if (delayCrossfade <= 0.0f && std::abs(targetDelaySamples - delaySamples) >= 1.0f) {
+            nextDelaySamples = targetDelaySamples;
+            delayCrossfade = delayCrossfadeStep;
+        }
+
+        float delayedL, delayedR;
+        read(delaySamples, delayedL, delayedR);
+        if (delayCrossfade > 0.0f) {
+            float nextL, nextR;
+            read(nextDelaySamples, nextL, nextR);
+            delayedL += (nextL - delayedL) * delayCrossfade;
+            delayedR += (nextR - delayedR) * delayCrossfade;
+
+            delayCrossfade += delayCrossfadeStep;
+            if (delayCrossfade >= 1.0f) {
+                delaySamples = nextDelaySamples;
+                delayCrossfade = 0.0f;
+            }
+        }
 
         const float inL = input[0][i];
         const float inR = input[1][i];

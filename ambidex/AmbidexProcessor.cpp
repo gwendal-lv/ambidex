@@ -129,8 +129,9 @@ float AmbidexAudioProcessor::getMorphedFxValueNormalised(int param) const {
 
     // A module that one preset doesn't use (mix at 0) keeps the settings of the
     // other preset: only its mix is morphed
-    const int mixParam = fx::getModuleInfo(fx::getModuleOf(param)).mixParam;
-    if (param != mixParam) {
+    const int module = fx::getModuleOf(param);
+    const int mixParam = module >= 0 ? fx::getModuleInfo(module).mixParam : -1;
+    if (module >= 0 && param != mixParam) {
         const bool usedByA = fxValues[0][mixParam] > 0.0f;
         const bool usedByB = fxValues[1][mixParam] > 0.0f;
         if (usedByA != usedByB)
