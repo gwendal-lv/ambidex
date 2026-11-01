@@ -14,6 +14,7 @@ ignore/
 .vscode
 
 planning.md
+doc/bench-results
 
 # symlink to the local standalone build (macOS)
 /Ambidex.app

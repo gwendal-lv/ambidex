@@ -18,29 +18,68 @@
 
 #include <cstdlib>
 
-#ifdef HAVE_NEON
-#include <cpu-features.h>
-#endif
-
 #include "synth.h"
 #include "sin.h"
 #include "fm_op_kernel.h"
 
-#ifdef HAVE_NEONx
-static bool hasNeon() {
-  return true;
-  return (android_getCpuFeatures() & ANDROID_CPU_ARM_FEATURE_NEON) != 0;
+// NEON (always available on aarch64) renders 4 samples at a time. Define
+// DEXED_NO_NEON to use the scalar loops instead.
+#if defined(__ARM_NEON) && !defined(DEXED_NO_NEON)
+#define DEXED_NEON_FM_KERNEL
+#include <arm_neon.h>
+
+// ((int64_t)Sin::lookup(phase) * gain) >> 24, for 4 samples
+static inline int32x4_t neon_sin_gain(int32x4_t phase, int32x4_t gain) {
+  static_assert(SIN_LG_N_SAMPLES == 10, "the lookup below expects 1024 samples");
+  // sintab holds { dy, y0 } pairs. There is no gather instruction, so each
+  // lane's pair is loaded separately.
+  int32x4_t index = vandq_s32(vshrq_n_s32(phase, 13), vdupq_n_s32(0x7FE));
+  int32x4_t lowbits = vandq_s32(phase, vdupq_n_s32(0x3FFF));
+  int32x4_t pairs01 = vcombine_s32(vld1_s32(sintab + vgetq_lane_s32(index, 0)),
+                                   vld1_s32(sintab + vgetq_lane_s32(index, 1)));
+  int32x4_t pairs23 = vcombine_s32(vld1_s32(sintab + vgetq_lane_s32(index, 2)),
+                                   vld1_s32(sintab + vgetq_lane_s32(index, 3)));
+  int32x4_t dy = vuzp1q_s32(pairs01, pairs23);
+  int32x4_t y0 = vuzp2q_s32(pairs01, pairs23);
+  // (|dy| < 2^17 and lowbits < 2^14: the product fits in 32 bits)
+  int32x4_t y = vaddq_s32(y0, vshrq_n_s32(vmulq_s32(dy, lowbits), 14));
+
+  return vcombine_s32(vshrn_n_s64(vmull_s32(vget_low_s32(y), vget_low_s32(gain)), 24),
+                      vshrn_n_s64(vmull_high_s32(y, gain), 24));
 }
 
-extern "C"
-void neon_fm_kernel(const int *in, const int *busin, int *out, int count,
-  int32_t phase0, int32_t freq, int32_t gain1, int32_t dgain);
+// compute() and compute_pure() for N samples, bit-exact with the scalar loops
+// below. Sample i uses phase0 + i * freq (+ input[i]) and gain1 + (i + 1) * dgain.
+template <bool hasInput, bool add>
+static inline void neon_fm_kernel(int32_t *output, const int32_t *input,
+                                  int32_t phase0, int32_t freq,
+                                  int32_t gain1, int32_t dgain) {
+  const int32_t lanes[4] = { 0, 1, 2, 3 };
+  const uint32x4_t lane = vreinterpretq_u32_s32(vld1q_s32(lanes));
+  // (unsigned maths: the phase wraps around)
+  int32x4_t phase = vreinterpretq_s32_u32(vmlaq_n_u32(vdupq_n_u32((uint32_t)phase0), lane, (uint32_t)freq));
+  int32x4_t gain = vreinterpretq_s32_u32(vmlaq_n_u32(vdupq_n_u32((uint32_t)gain1 + (uint32_t)dgain),
+                                                     lane, (uint32_t)dgain));
+  const int32x4_t phaseStep = vdupq_n_s32((int32_t)(4 * (uint32_t)freq));
+  const int32x4_t gainStep = vdupq_n_s32((int32_t)(4 * (uint32_t)dgain));
 
-const int32_t __attribute__ ((aligned(16))) zeros[N] = {0};
-
-#else
-static bool hasNeon() {
-  return false;
+  // 16 samples per iteration: the out-of-order core overlaps the table loads
+  // of the 4 groups (faster than 4 samples per iteration on a Cortex-A72)
+  const int unroll = 4;
+  for (int i = 0; i < N; i += 4 * unroll) {
+    int32x4_t y[unroll];
+    for (int u = 0; u < unroll; u++) {
+      int32x4_t p = hasInput ? vaddq_s32(phase, vld1q_s32(input + i + 4 * u)) : phase;
+      y[u] = neon_sin_gain(p, gain);
+      phase = vaddq_s32(phase, phaseStep);
+      gain = vaddq_s32(gain, gainStep);
+    }
+    for (int u = 0; u < unroll; u++) {
+      if (add)
+        y[u] = vaddq_s32(y[u], vld1q_s32(output + i + 4 * u));
+      vst1q_s32(output + i + 4 * u, y[u]);
+    }
+  }
 }
 #endif
 
@@ -48,63 +87,63 @@ void FmOpKernel::compute(int32_t *output, const int32_t *input,
                          int32_t phase0, int32_t freq,
                          int32_t gain1, int32_t gain2, bool add) {
   int32_t dgain = (gain2 - gain1 + (N >> 1)) >> LG_N;
+#ifdef DEXED_NEON_FM_KERNEL
+  if (add)
+    neon_fm_kernel<true, true>(output, input, phase0, freq, gain1, dgain);
+  else
+    neon_fm_kernel<true, false>(output, input, phase0, freq, gain1, dgain);
+#else
   int32_t gain = gain1;
   int32_t phase = phase0;
-  if (hasNeon()) {
-#ifdef HAVE_NEON
-    neon_fm_kernel(input, add ? output : zeros, output, N,
-      phase0, freq, gain, dgain);
-#endif
+  if (add) {
+    for (int i = 0; i < N; i++) {
+      gain += dgain;
+      int32_t y = Sin::lookup(phase + input[i]);
+      int32_t y1 = ((int64_t)y * (int64_t)gain) >> 24;
+      output[i] += y1;
+      phase += freq;
+    }
   } else {
-    if (add) {
-      for (int i = 0; i < N; i++) {
-        gain += dgain;
-        int32_t y = Sin::lookup(phase + input[i]);
-        int32_t y1 = ((int64_t)y * (int64_t)gain) >> 24;
-        output[i] += y1;
-        phase += freq;
-      }
-    } else {
-      for (int i = 0; i < N; i++) {
-        gain += dgain;
-        int32_t y = Sin::lookup(phase + input[i]);
-        int32_t y1 = ((int64_t)y * (int64_t)gain) >> 24;
-        output[i] = y1;
-        phase += freq;
-      }
+    for (int i = 0; i < N; i++) {
+      gain += dgain;
+      int32_t y = Sin::lookup(phase + input[i]);
+      int32_t y1 = ((int64_t)y * (int64_t)gain) >> 24;
+      output[i] = y1;
+      phase += freq;
     }
   }
+#endif
 }
 
 void FmOpKernel::compute_pure(int32_t *output, int32_t phase0, int32_t freq,
                               int32_t gain1, int32_t gain2, bool add) {
   int32_t dgain = (gain2 - gain1 + (N >> 1)) >> LG_N;
+#ifdef DEXED_NEON_FM_KERNEL
+  if (add)
+    neon_fm_kernel<false, true>(output, nullptr, phase0, freq, gain1, dgain);
+  else
+    neon_fm_kernel<false, false>(output, nullptr, phase0, freq, gain1, dgain);
+#else
   int32_t gain = gain1;
   int32_t phase = phase0;
-  if (hasNeon()) {
-#ifdef HAVE_NEON
-    neon_fm_kernel(zeros, add ? output : zeros, output, N,
-      phase0, freq, gain, dgain);
-#endif
+  if (add) {
+    for (int i = 0; i < N; i++) {
+      gain += dgain;
+      int32_t y = Sin::lookup(phase);
+      int32_t y1 = ((int64_t)y * (int64_t)gain) >> 24;
+      output[i] += y1;
+      phase += freq;
+    }
   } else {
-    if (add) {
-      for (int i = 0; i < N; i++) {
-        gain += dgain;
-        int32_t y = Sin::lookup(phase);
-        int32_t y1 = ((int64_t)y * (int64_t)gain) >> 24;
-        output[i] += y1;
-        phase += freq;
-      }
-    } else {
-      for (int i = 0; i < N; i++) {
-        gain += dgain;
-        int32_t y = Sin::lookup(phase);
-        int32_t y1 = ((int64_t)y * (int64_t)gain) >> 24;          
-        output[i] = y1;
-        phase += freq;
-      }
+    for (int i = 0; i < N; i++) {
+      gain += dgain;
+      int32_t y = Sin::lookup(phase);
+      int32_t y1 = ((int64_t)y * (int64_t)gain) >> 24;          
+      output[i] = y1;
+      phase += freq;
     }
   }
+#endif
 }
 
 #define noDOUBLE_ACCURACY

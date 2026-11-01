@@ -70,8 +70,17 @@ JUCE's sources are heavy to compile: if the build runs out of memory, limit the 
 jobs, e.g. `cmake --build --preset release -j 4`.
 
 To test on another Linux machine with the same CPU architecture (e.g. a Raspberry Pi),
-`scripts/run-remote.sh <ssh-host> [debug|release]` copies the built app to `~/ambidex-dev` on that
+`scripts/run-remote.sh <ssh-host> [preset]` copies the built app to `~/ambidex-dev` on that
 machine and runs it on its display.
+
+On ARM (e.g. the Linux arm64 build for the Raspberry Pi), the FM engines use NEON kernels,
+bit-exact with Dexed's scalar code (`-DAMBIDEX_NEON=OFF` to disable them). The `bench/` tool
+measures the CPU load (see `bench/README.md`).
+
+Dependencies are vendored in `libs/` (no git submodules): JUCE 8.0.11, clap-juce-extensions,
+MTS-ESP, tuning-library and surgesynthteam_tuningui. JUCE is trimmed to `modules/` and
+`extras/Build/` (no examples, no Projucer or other extras), so `JUCE_BUILD_EXAMPLES` and
+`JUCE_BUILD_EXTRAS` must stay off.
 
 Factory presets
 ---------------
@@ -89,11 +98,6 @@ scripts/update-factory-presets.sh "My New Preset"  # adds (or updates) a preset
 Then rebuild, and commit the changed files. To delete a factory preset, delete its file from
 `ambidex/presets/` (and re-run CMake). Existing libraries are not updated: to get the new factory
 presets, delete (or rename) the local `Presets` folder (see `doc/Presets.md`).
-
-Dependencies are vendored in `libs/` (no git submodules): JUCE 8.0.11, clap-juce-extensions,
-MTS-ESP, tuning-library and surgesynthteam_tuningui. JUCE is trimmed to `modules/` and
-`extras/Build/` (no examples, no Projucer or other extras), so `JUCE_BUILD_EXAMPLES` and
-`JUCE_BUILD_EXTRAS` must stay off.
 
 License
 -------

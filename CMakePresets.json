@@ -13,6 +13,13 @@
             "binaryDir": "${sourceDir}/build/${presetName}"
         },
         {
+            "name": "bench",
+            "hidden": true,
+            "cacheVariables": {
+                "AMBIDEX_BUILD_BENCH": "ON"
+            }
+        },
+        {
             "name": "debug",
             "displayName": "Debug",
             "inherits": "base",
@@ -23,9 +30,17 @@
         {
             "name": "release",
             "displayName": "Release",
-            "inherits": "base",
+            "inherits": ["base", "bench"],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "release-scalar",
+            "displayName": "Release, scalar FM kernels (benchmark baseline)",
+            "inherits": "release",
+            "cacheVariables": {
+                "AMBIDEX_NEON": "OFF"
             }
         }
     ],
@@ -41,6 +56,18 @@
             "displayName": "Release",
             "configurePreset": "release",
             "targets": ["Ambidex_Standalone"]
+        },
+        {
+            "name": "bench-release",
+            "displayName": "Benchmark: Release",
+            "configurePreset": "release",
+            "targets": ["ambidex-bench"]
+        },
+        {
+            "name": "bench-release-scalar",
+            "displayName": "Benchmark: Release, scalar FM kernels",
+            "configurePreset": "release-scalar",
+            "targets": ["ambidex-bench"]
         }
     ]
 }
