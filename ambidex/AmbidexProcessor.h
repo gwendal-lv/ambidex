@@ -60,6 +60,9 @@ public:
     /** FX parameter value heard at the current morph position, normalised (0..1). */
     float getMorphedFxValueNormalised(int param) const;
 
+    /** Live levels of the FX chain, for the GUI. */
+    FxChain::Meters& getFxMeters() { return fxChain.meters; }
+
     // Bypasses the whole FX chain, to listen to the presets dry (not saved)
     std::atomic<bool> fxBypassed { false };
 

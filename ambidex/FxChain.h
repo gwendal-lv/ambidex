@@ -18,6 +18,33 @@ class FxChain {
 public:
     using Values = std::array<float, fx::numParams>;
 
+    /**
+     * Levels for the GUI: the peaks since the GUI last read them (with
+     * exchange(0)). Only updated while the module is active.
+     */
+    struct Meters {
+        std::atomic<float> distortionInput { 0.0f };  // linear
+        std::atomic<float> compressorInput { 0.0f };  // linear
+        std::atomic<float> compressorGainReduction { 0.0f }; // dB, positive
+        std::atomic<float> modulationInput { 0.0f };  // linear
+        std::atomic<float> output { 0.0f };           // linear, after the soft clipper
+    };
+    Meters meters;
+
+    //==============================================================================
+    // Transfer functions, also used by the FX panel's plots
+    struct Mix {
+        float dry = 1.0f, wet = 0.0f;
+    };
+    /** Dry and wet gains of a module, for its mix parameter (see doc/Effects.md). */
+    static Mix getMix(int module, float mixValue);
+    /** Distortion: soft (0) -> hard (0.5) -> fold (1) waveshaper. */
+    static float shape(float x, float shapeValue);
+    /** Distortion: rough level compensation, for the drive gain. */
+    static float getDistortionOutputGain(float driveGain);
+    /** Compressor: automatic make-up gain, in dB. */
+    static float getCompressorMakeUpDecibels(float threshold, float ratio);
+
     void prepare(double sampleRate);
     void reset();
 
@@ -32,12 +59,6 @@ private:
     static constexpr int subBlockSize = 32;
     static constexpr int numChannels = 2;
 
-    struct Mix {
-        float dry = 1.0f, wet = 0.0f;
-    };
-
-    // Dry and wet gains of a module, for its mix parameter (see doc/Effects.md)
-    static Mix getMix(int module, float mixValue);
     void processSubBlock(float* const* channels, int numSamples);
     // (each returns the wet signal in the wet buffer)
     void processDistortion(const float* const* input, int numSamples);

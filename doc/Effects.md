@@ -40,6 +40,36 @@ over 50 ms), to listen to the presets dry, e.g. while editing their FM patch. It
 tool: it isn't saved in the presets, isn't morphed, and is always on when Ambidex starts. The FX
 knobs can still be edited while the chain is off. The output soft clipper (see below) stays on.
 
+Plots and meters
+----------------
+
+Each module has a plot on its right, which shows what it does. The plots are calculated from the
+values shown by the knobs, so they also move with the morph slider (greyed, as the knobs). They are
+pictures of the settings, not measurements: approximations, as noted below.
+
+* **Distortion**: the transfer curve (output vs input amplitude, from -1 to 1), including the drive,
+  the shape, the level compensation and the mix (the curve straightens as the mix goes down; the
+  tone filter isn't shown). The dot shows the current input level.
+* **Filter**: the frequency response (from 20 Hz to 20 kHz, -36 to +24 dB), including the mix. It is
+  the analog response of the filter, very close to the digital one except near 20 kHz.
+* **Compressor**: the output level vs the input level (-60 to 0 dB, a dashed line at the threshold),
+  including the make-up gain and the mix (parallel compression). The dot shows the current input
+  level, and the bar on the right the current gain reduction (up to 24 dB). Attack and release aren't
+  shown.
+* **Modulation**: the LFO over the last 2 seconds (rate and depth), with the current character. It
+  moves while sound goes through the module (it shows the speed and depth of the modulation, not
+  the exact phase of the audio LFO).
+* **Delay**: the echoes of a click, over time: the dry signal (white) and the echoes, left channel up
+  and right channel down (alternating with the spread, as in a ping-pong delay). Later echoes are
+  darker when the tone is low. The time shown is the width of the plot.
+* **Reverb**: the decay of the reverb (in dB, so it decreases linearly), estimated from Freeverb's
+  feedback: the low frequencies (dim) and the high frequencies (bright), which decay faster when
+  damping is high. Left channel up, right channel down: with a wide reverb they differ, with a narrow
+  one they are symmetrical. "RT60" is the time the low frequencies take to decay by 60 dB.
+
+The meter at the top of the panel shows the output peak level, after the soft clipper (from -48 to 0
+dB, orange above -3 dB, where the soft clipper starts rounding off the peaks).
+
 Why these modules
 -----------------
 
@@ -158,7 +188,8 @@ Implementation
 --------------
 
 The DSP is in `ambidex/FxChain.cpp`, the parameters (ranges, scales and defaults) in
-`ambidex/FxParameters.cpp`, and the panel in `ambidex/FxPanel.cpp`. The compressor, chorus,
+`ambidex/FxParameters.cpp`, the panel in `ambidex/FxPanel.cpp`, and the plots in
+`ambidex/FxPlots.cpp` (they use the same transfer functions as the DSP, from `FxChain`). The compressor, chorus,
 phaser and reverb are JUCE's (`juce::dsp` and `juce::Reverb`); the distortion, the delay and the
 filter (Andrew Simper's linear trapezoidal state variable filter) are written for Ambidex. The
 parameters are updated every 32 samples.

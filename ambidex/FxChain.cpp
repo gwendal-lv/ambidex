@@ -38,6 +38,20 @@ float onePoleLowPass(float input, float gain, float& state) {
     return output;
 }
 
+void raiseMeter(std::atomic<float>& meter, float value) {
+    // (a peak read and reset by the GUI meanwhile is lost: it's only a meter)
+    if (value > meter.load(std::memory_order_relaxed))
+        meter.store(value, std::memory_order_relaxed);
+}
+
+float getPeak(const float* const* channels, int numChannels, int numSamples) {
+    float peak = 0.0f;
+    for (int ch = 0; ch < numChannels; ++ch)
+        for (int i = 0; i < numSamples; ++i)
+            peak = jmax(peak, std::abs(channels[ch][i]));
+    return peak;
+}
+
 // Identity up to the threshold, then a tanh curve towards 1 (same value and
 // slope at the threshold, so it doesn't add a kink)
 float softClip(float x) {
@@ -48,8 +62,10 @@ float softClip(float x) {
     return std::copysign(softClipThreshold + headroom * std::tanh((magnitude - softClipThreshold) / headroom), x);
 }
 
-// Soft (0) -> hard (0.5) -> fold (1) waveshaper
-float shape(float x, float shapeValue) {
+} // namespace
+
+//==============================================================================
+float FxChain::shape(float x, float shapeValue) {
     const float hard = jlimit(-1.0f, 1.0f, x);
     if (shapeValue <= 0.5f) {
         const float soft = std::tanh(x);
@@ -58,7 +74,16 @@ float shape(float x, float shapeValue) {
     const float fold = std::sin(x * MathConstants<float>::halfPi);
     return hard + (fold - hard) * (shapeValue * 2.0f - 1.0f);
 }
-} // namespace
+
+float FxChain::getDistortionOutputGain(float driveGain) {
+    // (louder than 1 / drive, as the peaks get clipped)
+    return 1.0f / std::sqrt(driveGain);
+}
+
+float FxChain::getCompressorMakeUpDecibels(float threshold, float ratio) {
+    // Half of the gain reduction of a 0 dB signal
+    return -threshold * (1.0f - 1.0f / ratio) * 0.5f;
+}
 
 //==============================================================================
 void FxChain::prepare(double newSampleRate) {
@@ -161,6 +186,7 @@ void FxChain::process(AudioBuffer<float>& buffer, const Values& normalisedValues
         for (int i = 0; i < numSamples; ++i)
             samples[i] = softClip(samples[i]);
     }
+    raiseMeter(meters.output, buffer.getMagnitude(0, numSamples));
 }
 
 void FxChain::processSubBlock(float* const* channels, int numSamples) {
@@ -180,10 +206,16 @@ void FxChain::processSubBlock(float* const* channels, int numSamples) {
         const Mix mix = getMix(module, mixValue);
 
         switch (module) {
-            case distortion: processDistortion(channels, numSamples); break;
+            case distortion:
+                raiseMeter(meters.distortionInput, getPeak(channels, numChannels, numSamples));
+                processDistortion(channels, numSamples);
+                break;
             case filter: processFilter(channels, numSamples); break;
             case compressor: processCompressor(channels, numSamples); break;
-            case modulation: processModulation(channels, numSamples); break;
+            case modulation:
+                raiseMeter(meters.modulationInput, getPeak(channels, numChannels, numSamples));
+                processModulation(channels, numSamples);
+                break;
             case delay: processDelay(channels, numSamples); break;
             case reverb: processReverb(channels, numSamples, mix); break;
             default: break;
@@ -242,8 +274,7 @@ void FxChain::mixWet(float* const* channels, int numSamples, int module, Mix mix
 //==============================================================================
 void FxChain::processDistortion(const float* const* input, int numSamples) {
     const float driveGain = Decibels::decibelsToGain(get(distortionDrive));
-    // (rough level compensation: louder than 1 / drive, as the peaks get clipped)
-    const float outputGain = 1.0f / std::sqrt(driveGain);
+    const float outputGain = getDistortionOutputGain(driveGain);
     const float shapeValue = get(distortionShape);
     const float toneGain = onePoleGain(get(distortionTone), sampleRate);
 
@@ -302,12 +333,19 @@ void FxChain::processCompressor(const float* const* input, int numSamples) {
 
     for (int ch = 0; ch < numChannels; ++ch)
         wetBuffer.copyFrom(ch, 0, input[ch], numSamples);
+    const float inputPeak = getPeak(input, numChannels, numSamples);
+    const float inputRms = wetBuffer.getRMSLevel(0, 0, numSamples) + wetBuffer.getRMSLevel(1, 0, numSamples);
 
     dsp::AudioBlock<float> block(wetBuffer.getArrayOfWritePointers(), (size_t) numChannels, (size_t) numSamples);
     compressorDsp.process(dsp::ProcessContextReplacing<float>(block));
 
-    // Automatic make-up gain: half of the gain reduction of a 0 dB signal
-    const float makeUpGain = Decibels::decibelsToGain(-threshold * (1.0f - 1.0f / ratio) * 0.5f);
+    // Gain reduction: output vs input level (before the make-up gain)
+    const float outputRms = wetBuffer.getRMSLevel(0, 0, numSamples) + wetBuffer.getRMSLevel(1, 0, numSamples);
+    raiseMeter(meters.compressorInput, inputPeak);
+    if (inputRms > 1.0e-5f)
+        raiseMeter(meters.compressorGainReduction, jmax(0.0f, Decibels::gainToDecibels(inputRms / jmax(outputRms, 1.0e-9f))));
+
+    const float makeUpGain = Decibels::decibelsToGain(getCompressorMakeUpDecibels(threshold, ratio));
     block.multiplyBy(makeUpGain);
 }
 

@@ -28,6 +28,7 @@ target_sources(Ambidex PRIVATE
     FxChain.cpp
     FxPanel.cpp
     FxParameters.cpp
+    FxPlots.cpp
     PresetLibrary.cpp
 )
 
