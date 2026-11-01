@@ -3,15 +3,14 @@
 # architecture (e.g. a Raspberry Pi), then runs it there on the local display (:0).
 # Stopping this script (Ctrl+C) also stops the remote app.
 #
-# Usage: scripts/run-remote.sh <ssh-host> [debug|release]
+# Usage: scripts/run-remote.sh <ssh-host> [preset]   (release (default), debug...)
 set -euo pipefail
 
-host=${1:?usage: $0 <ssh-host> [debug|release]}
+host=${1:?usage: $0 <ssh-host> [preset]}
 preset=${2:-release}
 case "$preset" in
-    debug) config=Debug ;;
-    release) config=Release ;;
-    *) echo "unknown preset: $preset" >&2; exit 1 ;;
+    debug*) config=Debug ;;
+    *) config=Release ;;
 esac
 
 cd "$(dirname "$0")/.."

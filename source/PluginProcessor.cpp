@@ -107,7 +107,9 @@ DexedAudioProcessor::DexedAudioProcessor()
     showKeyboard = true;
     
     memset(&voiceStatus, 0, sizeof(VoiceStatus));
-    setEngineType(DEXED_ENGINE_MARKI);
+    // Ambidex: Modern, the engine parameter's default (Dexed used Mark I here, while
+    // the UI showed Modern), and the cheapest one in CPU
+    setEngineType(DEXED_ENGINE_MODERN);
     
     controllers.pitch_range_up = 3;
     controllers.pitch_range_dn = 3;

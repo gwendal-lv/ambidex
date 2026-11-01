@@ -17,6 +17,9 @@ if (CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_OSX_ARCHITECTURES "x86_64;arm64" CACHE INTERNAL "")
 endif()
 
+option(AMBIDEX_NEON "Use the NEON FM kernels on ARM (bit-exact with the scalar ones)" ON)
+option(AMBIDEX_BUILD_BENCH "Build the benchmark tool (bench/)" OFF)
+
 #static linking in Windows
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
@@ -36,6 +39,14 @@ add_subdirectory(libs)
 add_subdirectory(assets)
 add_subdirectory(source)
 add_subdirectory(ambidex)
+
+if(NOT AMBIDEX_NEON)
+    target_compile_definitions(dexed INTERFACE DEXED_NO_NEON)
+endif()
+
+if(AMBIDEX_BUILD_BENCH)
+    add_subdirectory(bench)
+endif()
 
 # uncomment to enable warnings are errors,
 # suppress warnings (or remove when fixed)

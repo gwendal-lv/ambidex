@@ -152,10 +152,90 @@ inline int32_t mkiSin(int32_t phase, uint16_t env) {
         return result << 13;
 }
 
+// NEON (always available on aarch64) renders 4 samples at a time. Define
+// DEXED_NO_NEON to use the scalar loops instead.
+#if defined(__ARM_NEON) && !defined(DEXED_NO_NEON)
+#define DEXED_NEON_MKI_KERNEL
+#include <arm_neon.h>
+
+// table[index] for each lane (there is no gather instruction)
+static inline uint32x4_t gather4(const uint16_t *table, uint32x4_t index) {
+    uint32x4_t v = vdupq_n_u32(table[vgetq_lane_u32(index, 0)]);
+    v = vsetq_lane_u32(table[vgetq_lane_u32(index, 1)], v, 1);
+    v = vsetq_lane_u32(table[vgetq_lane_u32(index, 2)], v, 2);
+    return vsetq_lane_u32(table[vgetq_lane_u32(index, 3)], v, 3);
+}
+
+// mkiSin(phase, env) for 4 samples (its uint16_t maths done in 32-bit lanes)
+static inline int32x4_t neon_mkiSin(uint32x4_t phase, uint32x4_t env) {
+    // sinLog(phase >> 12): quarter wave table, mirrored in the 2nd and
+    // 4th quarters, negative in the 2nd half
+    uint32x4_t phi = vshrq_n_u32(phase, 22 - SINLOG_BITDEPTH);
+    uint32x4_t mirror = vtstq_u32(phi, vdupq_n_u32(SINLOG_TABLESIZE));
+    uint32x4_t index = veorq_u32(vandq_u32(phi, vdupq_n_u32(SINLOG_TABLESIZE - 1)),
+                                 vandq_u32(mirror, vdupq_n_u32(SINLOG_TABLESIZE - 1)));
+    uint32x4_t negative = vandq_u32(vshlq_n_u32(phi, 4), vdupq_n_u32(NEGATIVE_BIT)); // (bit 11 -> 15)
+    uint32x4_t expVal = vorrq_u32(gather4(sinLogTable, index), negative);
+
+    // + env, as uint16_t
+    expVal = vandq_u32(vaddq_u32(expVal, env), vdupq_n_u32(0xFFFF));
+    uint32x4_t isSigned = vtstq_u32(expVal, vdupq_n_u32(NEGATIVE_BIT));
+    expVal = vandq_u32(expVal, vdupq_n_u32(NEGATIVE_BIT - 1));
+
+    const uint32x4_t SINEXP_FILTER = vdupq_n_u32(0x3FF);
+    uint32x4_t result = vaddq_u32(vdupq_n_u32(4096),
+        gather4(sinExpTable, veorq_u32(vandq_u32(expVal, SINEXP_FILTER), SINEXP_FILTER)));
+    // result >>= (expVal >> 10), a negative shift is a right shift
+    result = vshlq_u32(result, vnegq_s32(vreinterpretq_s32_u32(vshrq_n_u32(expVal, 10))));
+
+    // (-result - 1) << 13 == ~result << 13
+    return vreinterpretq_s32_u32(vshlq_n_u32(veorq_u32(result, isSigned), 13));
+}
+
+// compute() and compute_pure() for N samples, bit-exact with the scalar loops.
+// Sample i uses phase0 + i * freq (+ input[i]) and gain1 + (i + 1) * dgain.
+template <bool hasInput, bool add>
+static inline void neon_mki_kernel(int32_t *output, const int32_t *input,
+                                   int32_t phase0, int32_t freq,
+                                   int32_t gain1, int32_t dgain) {
+    const uint32_t lanes[4] = { 0, 1, 2, 3 };
+    const uint32x4_t lane = vld1q_u32(lanes);
+    // (unsigned maths: the phase wraps around)
+    uint32x4_t phase = vmlaq_n_u32(vdupq_n_u32((uint32_t)phase0), lane, (uint32_t)freq);
+    uint32x4_t gain = vmlaq_n_u32(vdupq_n_u32((uint32_t)gain1 + (uint32_t)dgain), lane, (uint32_t)dgain);
+    const uint32x4_t phaseStep = vdupq_n_u32(4 * (uint32_t)freq);
+    const uint32x4_t gainStep = vdupq_n_u32(4 * (uint32_t)dgain);
+
+    // 16 samples per iteration: the out-of-order core overlaps the table loads
+    // of the 4 groups (much faster than 4 samples per iteration on a Cortex-A72)
+    const int unroll = 4;
+    for (int i = 0; i < N; i += 4 * unroll) {
+        int32x4_t y[unroll];
+        for (int u = 0; u < unroll; u++) {
+            uint32x4_t p = hasInput ? vaddq_u32(phase, vreinterpretq_u32_s32(vld1q_s32(input + i + 4 * u))) : phase;
+            y[u] = neon_mkiSin(p, gain);
+            phase = vaddq_u32(phase, phaseStep);
+            gain = vaddq_u32(gain, gainStep);
+        }
+        for (int u = 0; u < unroll; u++) {
+            if (add)
+                y[u] = vaddq_s32(y[u], vld1q_s32(output + i + 4 * u));
+            vst1q_s32(output + i + 4 * u, y[u]);
+        }
+    }
+}
+#endif
+
 void EngineMkI::compute(int32_t *output, const int32_t *input,
                         int32_t phase0, int32_t freq,
                         int32_t gain1, int32_t gain2, bool add) {
     int32_t dgain = (gain2 - gain1 + (N >> 1)) >> LG_N;
+#ifdef DEXED_NEON_MKI_KERNEL
+    if (add)
+        neon_mki_kernel<true, true>(output, input, phase0, freq, gain1, dgain);
+    else
+        neon_mki_kernel<true, false>(output, input, phase0, freq, gain1, dgain);
+#else
     int32_t gain = gain1;
     int32_t phase = phase0;
     const int32_t *adder = add ? output : zeros;
@@ -166,12 +246,18 @@ void EngineMkI::compute(int32_t *output, const int32_t *input,
         output[i] = y + adder[i];
         phase += freq;
     }
-    
+#endif
 }
 
 void EngineMkI::compute_pure(int32_t *output, int32_t phase0, int32_t freq,
                              int32_t gain1, int32_t gain2, bool add) {
     int32_t dgain = (gain2 - gain1 + (N >> 1)) >> LG_N;
+#ifdef DEXED_NEON_MKI_KERNEL
+    if (add)
+        neon_mki_kernel<false, true>(output, nullptr, phase0, freq, gain1, dgain);
+    else
+        neon_mki_kernel<false, false>(output, nullptr, phase0, freq, gain1, dgain);
+#else
     int32_t gain = gain1;
     int32_t phase = phase0;
     const int32_t *adder = add ? output : zeros;
@@ -182,6 +268,7 @@ void EngineMkI::compute_pure(int32_t *output, int32_t phase0, int32_t freq,
         output[i] = y + adder[i];
         phase += freq;
     }
+#endif
 }
 
 void EngineMkI::compute_fb(int32_t *output, int32_t phase0, int32_t freq,
