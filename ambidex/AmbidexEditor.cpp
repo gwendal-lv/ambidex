@@ -282,6 +282,10 @@ AmbidexAudioProcessorEditor::AmbidexAudioProcessorEditor(AmbidexAudioProcessor& 
     keyboard.setTitle("Keyboard keys");
     addAndMakeVisible(keyboard);
 
+    // (presets loaded over OSC)
+    if (auto* oscServer = ambidex.getOscServer())
+        oscServer->onPresetLoaded = [this](int slot) { presetChanged(slot); };
+
     showEngine(ambidex.editedEngine);
     morphChanged();
     timerCallback();
@@ -289,6 +293,8 @@ AmbidexAudioProcessorEditor::AmbidexAudioProcessorEditor(AmbidexAudioProcessor& 
 }
 
 AmbidexAudioProcessorEditor::~AmbidexAudioProcessorEditor() {
+    if (auto* oscServer = ambidex.getOscServer())
+        oscServer->onPresetLoaded = nullptr;
     stopTimer();
     for (int i = 0; i < numEngines; ++i) {
         dexedEditors[i]->removeComponentListener(this);

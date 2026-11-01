@@ -6,6 +6,7 @@
 #include <JuceHeader.h>
 
 #include "FxChain.h"
+#include "OscServer.h"
 #include "PresetLibrary.h"
 #include "PluginProcessor.h"
 
@@ -86,6 +87,9 @@ public:
     /** Marks the slot as modified, until it's saved or loaded. */
     void setPresetUnsaved(int slot);
 
+    /** Remote control over OSC (standalone app only, otherwise nullptr). */
+    OscServer* getOscServer() { return oscServer.get(); }
+
     /** Equal-power crossfade gains for a morph position in [0, 1]. */
     static std::pair<float, float> getMorphGains(float morph);
 
@@ -118,6 +122,9 @@ private:
     // Signature of each slot when its preset was loaded or saved (empty = modified)
     std::vector<float> baselines[numEngines];
     std::vector<float> getSignature(int slot) const;
+
+    // (last: deleted first, as it uses the rest)
+    std::unique_ptr<OscServer> oscServer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AmbidexAudioProcessor)
 };

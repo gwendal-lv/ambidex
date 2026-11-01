@@ -5,6 +5,8 @@ Ambidex is a standalone FM synth running two [Dexed](https://github.com/asb2m10/
 A and B, with a different preset in each. A horizontal "morph" slider crossfades from one to the
 other, and the A / B buttons choose which preset is shown in the (original) Dexed editor.
 
+![Ambidex: presets A and B, the morph slider, the Dexed editor and the FX chain](doc/ambidex.png)
+
 The mix of both engines goes through an FX chain (distortion, filter, compressor, modulation, delay
 and reverb), whose knobs are also morphed between their A and B values, then a soft clipper that
 keeps the output below 0 dBFS: see `doc/Effects.md`.
@@ -13,7 +15,14 @@ Presets A and B are chosen from a library of Ambidex presets, which hold the FM 
 voice), Dexed's settings and the FX settings. Dexed's cartridges are only used to load FM patches.
 Presets A and B, with their unsaved edits, are restored at each launch: see `doc/Presets.md`.
 
-Default presets: A = "Chorus Rhodes", B = "Pharoh" (factory presets).
+The morph and the presets A and B can be controlled remotely over OSC (UDP port 9000): see
+`doc/OSC.md`, and the Python demo client `scripts/osc_demo.py`, to run in a venv:
+
+```
+python3 -m venv .venv
+.venv/bin/pip install -r scripts/requirements.txt
+.venv/bin/python scripts/osc_demo.py
+```
 
 Based on Dexed
 --------------
@@ -28,9 +37,9 @@ Ambidex is built on
 * `ambidex/` is the Ambidex app: `AmbidexProcessor` hosts the two Dexed engines and crossfades
   them, `AmbidexEditor` wraps the Dexed editor with the A/B buttons, the morph slider and the
   keyboard, and `FxChain` / `FxPanel` are the FX chain (built on JUCE's DSP classes).
-  `PresetLibrary` stores the presets, and `DexedEditorCustomiser` adapts Dexed's editor to them
-  (hides the logo, INIT, STORE and the program list, turns CART into "Load FM patch"...) from the
-  outside, without changing Dexed's code.
+  `PresetLibrary` stores the presets, `OscServer` handles the OSC remote control, and
+  `DexedEditorCustomiser` adapts Dexed's editor to them (hides the logo, INIT, STORE and the
+  program list, turns CART into "Load FM patch"...) from the outside, without changing Dexed's code.
 
 All of Dexed's default cartridges are embedded in the app: on first launch, they are unpacked
 into Ambidex's data folder, which also holds the preferences (`Dexed.xml`) and an optional

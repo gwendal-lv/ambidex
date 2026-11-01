@@ -29,6 +29,7 @@ target_sources(Ambidex PRIVATE
     FxPanel.cpp
     FxParameters.cpp
     FxPlots.cpp
+    OscServer.cpp
     PresetLibrary.cpp
 )
 
@@ -53,6 +54,7 @@ PRIVATE
     dexed
     AmbidexFactoryPresets
     juce::juce_dsp
+    juce::juce_osc
 PUBLIC
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags

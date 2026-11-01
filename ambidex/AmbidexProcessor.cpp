@@ -43,6 +43,10 @@ AmbidexAudioProcessor::AmbidexAudioProcessor()
             baselines[slot].clear();
         }
     }
+
+    // (not in other contexts, e.g. the headless bench tool)
+    if (wrapperType == wrapperType_Standalone)
+        oscServer = std::make_unique<OscServer>(*this);
 }
 
 AmbidexAudioProcessor::~AmbidexAudioProcessor() = default;
