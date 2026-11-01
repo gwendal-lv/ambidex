@@ -10,7 +10,10 @@
 cmake-build-*
 ignore/
 
+# VSCode
+.vscode
+
 planning.md
 
-# symlink to the local standalone build
+# symlink to the local standalone build (macOS)
 /Ambidex.app

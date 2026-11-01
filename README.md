@@ -35,13 +35,32 @@ if it exists (portable setup).
 How to build
 ------------
 
+Requirements: CMake 3.21+, [Ninja](https://ninja-build.org/) and a C++17 compiler (GCC or Clang
+on Linux, Xcode on macOS).
+
+On Linux (Debian / Ubuntu), install the build dependencies with:
+
 ```
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --target Ambidex_Standalone
+sudo apt install build-essential cmake ninja-build pkg-config \
+    libasound2-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev \
+    libxcursor-dev libfreetype-dev libfontconfig1-dev libgl-dev libgtk-3-dev \
+    libwebkit2gtk-4.1-dev libcurl4-openssl-dev
 ```
 
-The app is built in `build/ambidex/Ambidex_artefacts/<config>/Standalone/`. On Linux, see Dexed's
-[Linux build dependencies](https://github.com/asb2m10/dexed/wiki/Linux-build-dependencies).
+Then build with the CMake presets (`debug` or `release`):
+
+```
+cmake --preset release
+cmake --build --preset release
+```
+
+The app is built in `build/<preset>/ambidex/Ambidex_artefacts/<Debug|Release>/Standalone/`.
+JUCE's sources are heavy to compile: if the build runs out of memory, limit the number of parallel
+jobs, e.g. `cmake --build --preset release -j 4`.
+
+To test on another Linux machine with the same CPU architecture (e.g. a Raspberry Pi),
+`scripts/run-remote.sh <ssh-host> [debug|release]` copies the built app to `~/ambidex-dev` on that
+machine and runs it on its display.
 
 Dependencies are vendored in `libs/` (no git submodules): JUCE 8.0.11, clap-juce-extensions,
 MTS-ESP, tuning-library and surgesynthteam_tuningui. JUCE is trimmed to `modules/` and
