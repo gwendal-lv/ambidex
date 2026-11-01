@@ -10,7 +10,7 @@ Default presets: A = "2. LAURIE", B = "4. PHAROH" (from Dexed's `Dexed_01.syx` c
 Based on Dexed
 --------------
 
-Ambidex is built on Dexed by Pascal Gauthier and contributors, imported from
+Ambidex is built on 
 [asb2m10/dexed@fea2f0f](https://github.com/asb2m10/dexed/commit/fea2f0f0f2c397799f59b27eb11c038cd34b22c5)
 (Dexed 1.1.0 development version).
 
@@ -21,8 +21,16 @@ Ambidex is built on Dexed by Pascal Gauthier and contributors, imported from
   them, `AmbidexEditor` wraps the Dexed editor with the A/B buttons, the morph slider and the
   keyboard.
 
-Ambidex shares Dexed's preferences file and cartridge folder (e.g. `~/Library/Application
-Support/DigitalSuburban/Dexed` on macOS).
+All of Dexed's default cartridges are embedded in the app: on first launch, they are unpacked
+into Ambidex's data folder, which also holds the preferences (`Dexed.xml`) and an optional
+`DexedTheme.xml` (see `doc/DexedTheme.md`):
+
+* macOS: `~/Library/Application Support/Ambidex`
+* Windows: `%APPDATA%\Ambidex`
+* Linux: `$XDG_DATA_HOME/Ambidex`, or `~/.local/share/Ambidex`
+
+A folder named `Ambidex` next to the app (or next to the `.app` bundle on macOS) is used instead,
+if it exists (portable setup).
 
 How to build
 ------------
@@ -48,6 +56,8 @@ Ambidex, like Dexed, is licensed under the GPL v3 (see `LICENSE`). The msfa comp
 
 Dexed credits
 -------------
+* Dexed by Pascal Gauthier and contributors, imported from
+[asb2m10/dexed@fea2f0f](https://github.com/asb2m10/dexed/commit/fea2f0f0f2c397799f59b27eb11c038cd34b22c5)
 * DX Synth engine : Raph Levien and the [msfa](https://github.com/google/music-synthesizer-for-android) team
 * [Surge Synth Team](https://surge-synth-team.org/) for substantial contributions like microtuning and MPE support.
 * Graphical design : AZur Studio

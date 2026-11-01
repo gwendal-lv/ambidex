@@ -5,7 +5,7 @@ Last update: 26 July 2024
 
 Dexed UI can be themed if you want a different colour combination or background images.
 
-You need need to create a file named "DexedTheme.xml" and it must be placed in the same directory where "Dexed.xml" is created. On Windows, this is "C:\Users\&lt;your user name&gt;\AppData\Roaming\DigitalSuburban\Dexed" and on Mac it is "~/Library/Application Support/DigitalSuburban/Dexed" (FIXME!), and in Linux it is "~/.local/share/DigitalSuburban/Dexed".
+You need need to create a file named "DexedTheme.xml" and it must be placed in the same directory where "Dexed.xml" is created. On Windows, this is "C:\Users\&lt;your user name&gt;\AppData\Roaming\Ambidex" and on Mac it is "~/Library/Application Support/Ambidex", and in Linux it is "~/.local/share/Ambidex".
 
 Colour id are analogous to JUCE color ID; see [DXLookNFeel() class](../Source/DXLookNFeel.cpp) for a complete list a defined colours id. Colour value is the hexa decimal values (from 0 to 0xFF) for ALPHA RED BLUE GREEN.
 For ALPHA, 0x00 is completely transparent, 0xFF is opaque.

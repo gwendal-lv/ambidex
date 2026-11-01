@@ -174,28 +174,28 @@ File DexedAudioProcessor::dexedCartDir;
 
 void DexedAudioProcessor::resolvAppDir() {
     #if JUCE_MAC || JUCE_IOS
-        File parent = File::getSpecialLocation(File::currentExecutableFile).getParentDirectory().getParentDirectory().getParentDirectory().getSiblingFile("Dexed");
+        File parent = File::getSpecialLocation(File::currentExecutableFile).getParentDirectory().getParentDirectory().getParentDirectory().getSiblingFile("Ambidex");
     
         if ( parent.isDirectory() ) {
             dexedAppDir = parent;
         } else {
-            dexedAppDir = File("~/Library/Application Support/DigitalSuburban/Dexed");
+            dexedAppDir = File("~/Library/Application Support/Ambidex");
         }
     #elif JUCE_WINDOWS
-        if ( File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Dexed").isDirectory() ) {
-            dexedAppDir = File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Dexed");
+        if ( File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Ambidex").isDirectory() ) {
+            dexedAppDir = File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Ambidex");
         } else {
-            dexedAppDir = File::getSpecialLocation(File::userApplicationDataDirectory).getChildFile("DigitalSuburban").getChildFile("Dexed");
+            dexedAppDir = File::getSpecialLocation(File::userApplicationDataDirectory).getChildFile("Ambidex");
         }
     #else
-        if ( File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Dexed").isDirectory() ) {
-            dexedAppDir = File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Dexed");
+        if ( File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Ambidex").isDirectory() ) {
+            dexedAppDir = File::getSpecialLocation(File::currentExecutableFile).getSiblingFile("Ambidex");
         } else {
             char *xdgHome = getenv("XDG_DATA_HOME");
             if ( xdgHome == nullptr ) {
-                dexedAppDir = File("~/.local/share").getChildFile("DigitalSuburban").getChildFile("Dexed");
+                dexedAppDir = File("~/.local/share").getChildFile("Ambidex");
             } else {
-                dexedAppDir = File(xdgHome).getChildFile("DigitalSuburban").getChildFile("Dexed");
+                dexedAppDir = File(xdgHome).getChildFile("Ambidex");
             }
         }
     #endif

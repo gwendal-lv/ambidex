@@ -59,6 +59,9 @@ public:
     // On-screen keyboard, played into both engines
     MidiKeyboardState keyboardState;
 
+    // Time spent in processBlock, relative to the duration of the block (thread safe)
+    AudioProcessLoadMeasurer loadMeasurer;
+
 private:
     std::unique_ptr<DexedAudioProcessor> engines[numEngines];
 

@@ -14,15 +14,14 @@ constexpr double morphSmoothingSeconds = 0.05;
 
 const Identifier stateId("ambidex");
 const Identifier engineId("engine");
-const Identifier morphId("morph");
-const Identifier editedEngineId("editedEngine");
 const Identifier dexedStateId("dexedState");
 } // namespace
 
 //==============================================================================
 AmbidexAudioProcessor::AmbidexAudioProcessor()
     : AudioProcessor(BusesProperties().withOutput("output", AudioChannelSet::stereo(), true)) {
-    addParameter(morph = new AudioParameterFloat(ParameterID("morph", 1), "Morph", 0.0f, 1.0f, 0.5f));
+    // (Ambidex starts fully on A, with preset A editable: the morph isn't saved in the state)
+    addParameter(morph = new AudioParameterFloat(ParameterID("morph", 1), "Morph", 0.0f, 1.0f, 0.0f));
 
     for (auto& engine : engines)
         engine = std::make_unique<DexedAudioProcessor>();
@@ -45,6 +44,8 @@ void AmbidexAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock
 
     smoothedMorph.reset(sampleRate, morphSmoothingSeconds);
     smoothedMorph.setCurrentAndTargetValue(morph->get());
+
+    loadMeasurer.reset(sampleRate, samplesPerBlock);
 }
 
 void AmbidexAudioProcessor::releaseResources() {
@@ -68,6 +69,7 @@ void AmbidexAudioProcessor::processBlock(AudioBuffer<float>& buffer, MidiBuffer&
     ScopedNoDenormals noDenormals;
     const int numSamples = buffer.getNumSamples();
     const int numChannels = buffer.getNumChannels();
+    AudioProcessLoadMeasurer::ScopedTimer loadTimer(loadMeasurer, numSamples);
 
     keyboardState.processNextMidiBuffer(midiMessages, 0, numSamples, true);
 
@@ -103,8 +105,6 @@ AudioProcessorEditor* AmbidexAudioProcessor::createEditor() {
 //==============================================================================
 void AmbidexAudioProcessor::getStateInformation(MemoryBlock& destData) {
     ValueTree state(stateId);
-    state.setProperty(morphId, morph->get(), nullptr);
-    state.setProperty(editedEngineId, editedEngine, nullptr);
 
     for (auto& engine : engines) {
         MemoryBlock engineState;
@@ -125,8 +125,6 @@ void AmbidexAudioProcessor::setStateInformation(const void* data, int sizeInByte
         return;
 
     auto state = ValueTree::fromXml(*xml);
-    *morph = (float) state.getProperty(morphId, morph->get());
-    editedEngine = jlimit(0, numEngines - 1, (int) state.getProperty(editedEngineId, 0));
 
     for (int i = 0; i < numEngines && i < state.getNumChildren(); ++i) {
         MemoryBlock engineState;
