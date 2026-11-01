@@ -42,7 +42,7 @@ private:
     void run() override;
     void handleAsyncUpdate() override;
 
-    // Network thread: the morph is set right away
+    // Network thread (or message thread, to keep the order of the messages)
     void setMorph(const Message& message);
     // Message thread: everything else
     void handleMessage(const Message& message);
@@ -63,6 +63,8 @@ private:
     // Received by the network thread, for the message thread
     CriticalSection pendingLock;
     std::vector<Message> pending;
+    // Queued, and not handled yet (pending, or being handled)
+    std::atomic<int> numUnhandled { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(OscServer)
 };

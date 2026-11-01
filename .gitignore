@@ -5,6 +5,7 @@
 /build*/
 .cache/
 
+
 # CLION
 .idea
 cmake-build-*
@@ -21,3 +22,4 @@ doc/bench-results
 
 # Python venv (see README)
 .venv/
+__pycache__

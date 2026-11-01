@@ -4,6 +4,10 @@
 #include "OscServer.h"
 #include "AmbidexProcessor.h"
 
+#if ! JUCE_WINDOWS
+ #include <sys/socket.h>
+#endif
+
 namespace {
 const String morphAddress("/ambidex/morph");
 const String slotPresetAddresses[] = { "/ambidex/slot/a/preset", "/ambidex/slot/b/preset" };
@@ -17,6 +21,8 @@ const char* const errorReplyAddress = "/ambidex/error";
 
 // The largest UDP payload
 constexpr int maxPacketSize = 65536;
+// Messages waiting for the message thread, beyond which new ones are dropped (flood)
+constexpr int maxUnhandled = 1000;
 
 /** Reads OSC data: big-endian, padded to multiples of 4 bytes. */
 struct OscReader {
@@ -151,7 +157,10 @@ bool isNumber(const var& value) {
 String describeArgs(const Array<var>& args) {
     StringArray types;
     for (const auto& arg : args)
-        types.add(arg.isString() ? "string" : isNumber(arg) ? "number" : arg.isBool() ? "bool" : "nil");
+        types.add(arg.isString()  ? "string"
+                  : isNumber(arg) ? (std::isfinite((double) arg) ? "number" : "non-finite number")
+                  : arg.isBool()  ? "bool"
+                                  : "nil");
     return types.isEmpty() ? String("no arguments") : types.joinIntoString(", ");
 }
 } // namespace
@@ -159,6 +168,13 @@ String describeArgs(const Array<var>& args) {
 //==============================================================================
 OscServer::OscServer(AmbidexAudioProcessor& p, int portToUse)
     : Thread("OSC server"), processor(p), port(portToUse) {
+#if ! JUCE_WINDOWS
+    // JUCE's sockets allow the port to be shared: another app (or Ambidex instance)
+    // could then silently get part of the messages. Binding must fail instead.
+    const int reuse = 0;
+    setsockopt(socket.getRawSocketHandle(), SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+#endif
+
     // (on all network interfaces)
     listening = socket.bindToPort(port);
     if (!listening) {
@@ -185,8 +201,11 @@ void OscServer::run() {
     while (!threadShouldExit()) {
         // (with a timeout, to check threadShouldExit)
         const int ready = socket.waitUntilReady(true, 100);
-        if (ready < 0)
-            break;
+        if (ready < 0) {
+            // (e.g. an error reported for a previous reply: the socket still works)
+            Thread::sleep(10);
+            continue;
+        }
         if (ready == 0)
             continue;
 
@@ -205,12 +224,15 @@ void OscServer::run() {
             message.senderPort = senderPort;
 
             // The morph may be streamed by a controller, and its parameter is
-            // thread safe: no detour through the message thread
-            if (message.address == morphAddress) {
+            // thread safe: no detour through the message thread, unless messages
+            // received before are still waiting there (e.g. a preset to load
+            // before morphing to it)
+            if (message.address == morphAddress && numUnhandled == 0) {
                 setMorph(message);
-            } else {
+            } else if (numUnhandled < maxUnhandled) {
                 const ScopedLock lock(pendingLock);
                 pending.push_back(std::move(message));
+                ++numUnhandled;
                 queued = true;
             }
         }
@@ -225,27 +247,31 @@ void OscServer::handleAsyncUpdate() {
         const ScopedLock lock(pendingLock);
         std::swap(messages, pending);
     }
-    for (const auto& message : messages)
+    for (const auto& message : messages) {
         handleMessage(message);
+        --numUnhandled;
+    }
 }
 
 //==============================================================================
 void OscServer::setMorph(const Message& message) {
-    if (message.args.size() != 1 || !isNumber(message.args[0])) {
+    if (message.args.size() != 1 || !isNumber(message.args[0]) || !std::isfinite((double) message.args[0])) {
         replyError(message, morphAddress + " expects a number (0 = A, 1 = B), got " + describeArgs(message.args));
         return;
     }
 
     // (the editor follows, through the slider's attachment)
     auto& morph = *processor.morph;
-    const float value = jlimit(0.0f, 1.0f, (float) (double) message.args[0]);
+    const float value = (float) jlimit(0.0, 1.0, (double) message.args[0]);
     morph.setValueNotifyingHost(morph.convertTo0to1(value));
 }
 
 void OscServer::handleMessage(const Message& message) {
     const auto& address = message.address;
 
-    if (address == listPresetsAddress) {
+    if (address == morphAddress) {
+        setMorph(message);
+    } else if (address == listPresetsAddress) {
         OSCMessage presets(presetsReplyAddress);
         for (const auto& name : processor.getPresetLibrary().getNames())
             presets.addString(name);
@@ -272,26 +298,26 @@ void OscServer::handleMessage(const Message& message) {
 
 void OscServer::loadPreset(const Message& message, int slot) {
     // (some controllers only send floats: a whole number is accepted)
-    const bool isIndex = message.args.size() == 1 && isNumber(message.args[0])
-                         && std::floor((double) message.args[0]) == (double) message.args[0];
-    if (!isIndex) {
+    const double value = message.args.size() == 1 && isNumber(message.args[0]) ? (double) message.args[0] : 0.5;
+    if (std::floor(value) != value) {
         replyError(message, message.address + " expects a preset index, got " + describeArgs(message.args));
         return;
     }
 
     auto& library = processor.getPresetLibrary();
     const StringArray names = library.getNames();
-    const auto index = (int64) message.args[0];
-    if (!isPositiveAndBelow(index, (int64) names.size())) {
-        replyError(message, "preset index " + String(index) + " out of range (0 to " + String(names.size() - 1)
+    // (checked before the conversion to int, which would overflow)
+    if (!isPositiveAndBelow(value, (double) names.size())) {
+        replyError(message, "preset index " + String(value, 0) + " out of range (0 to " + String(names.size() - 1)
                                 + ", see " + listPresetsAddress + ")");
         return;
     }
+    const int index = (int) value;
 
     // (discards the slot's unsaved edits, if any)
     AmbidexPreset preset;
-    if (!library.load(names[(int) index], preset)) {
-        replyError(message, "unable to load the preset \"" + names[(int) index] + "\"");
+    if (!library.load(names[index], preset)) {
+        replyError(message, "unable to load the preset \"" + names[index] + "\"");
         return;
     }
     processor.loadPreset(slot, preset);
@@ -303,7 +329,8 @@ void OscServer::loadPreset(const Message& message, int slot) {
 //==============================================================================
 void OscServer::reply(const Message& request, const OSCMessage& message) {
     const ScopedLock lock(sendLock);
-    sender.sendToIPAddress(request.senderAddress, request.senderPort, message);
+    if (!sender.sendToIPAddress(request.senderAddress, request.senderPort, message))
+        DBG("OSC: unable to reply to " << request.senderAddress << ":" << request.senderPort);
 }
 
 void OscServer::replyError(const Message& request, const String& error) {

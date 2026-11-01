@@ -3,8 +3,9 @@ OSC remote control
 
 Ambidex listens for [OSC](https://opensoundcontrol.stanford.edu/) messages on **UDP port 9000**,
 on all network interfaces, to set the morph and the presets of slots A and B from another program,
-on this machine or on the network. If the port is already used by another app, the OSC control is
-off. `scripts/osc_demo.py` is a Python client and demo.
+on this machine or on the network. If the port is already used by another app (or another
+Ambidex), the OSC control is off (macOS and Linux; on Windows, both apps may share the port).
+`scripts/osc_demo.py` is a Python client and demo.
 
 Messages
 --------
@@ -19,6 +20,7 @@ Messages
 
 Numbers can be sent as int or float (`i`, `f`, `h` or `d`); a preset index must be a whole number.
 Messages can also be grouped in bundles (their time tags are ignored: they're handled right away).
+Messages are handled in the order they're received: e.g. a preset load followed by a morph.
 
 * **Preset indices** are positions in the list returned by `/ambidex/presets/list`, from 0. The
   list is sorted by name, so adding, renaming or deleting a preset shifts the indices after it:
