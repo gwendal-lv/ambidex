@@ -2,6 +2,7 @@
 // Ambidex - two Dexed engines with a morphing crossfader.
 
 #include "AmbidexEditor.h"
+#include "core/Cartridge.h"
 #include "ui/PluginEditor.h"
 
 namespace {
@@ -10,8 +11,8 @@ constexpr int titleWidth = 110;
 // Between the title column and the morph panel
 constexpr int titleGap = 10;
 constexpr int engineButtonWidth = 40;
-constexpr int programNameWidth = 110;
-constexpr int programNameHeight = 19;
+constexpr int presetNameWidth = 150;
+constexpr int presetNameHeight = 19;
 // Around the frame of the engine being edited, inside the morph panel
 constexpr int engineFrameMargin = 4;
 
@@ -26,6 +27,34 @@ constexpr int morphThumbRadius = 9;
 // The Dexed editor shows engine B once the morph goes above this, and engine A
 // once it goes below 1 - this (in between, it keeps showing the same engine)
 constexpr double showEngineBAbove = 0.6;
+
+const String engineNames[] = { "A", "B" };
+
+// Load FM patch menu: the cartridges in a folder and its subfolders, with their
+// voices (item IDs: 1 + cartridge index * 32 + voice index)
+PopupMenu createCartridgeMenu(const File& folder, Array<File>& cartridges) {
+    PopupMenu menu;
+
+    auto subfolders = folder.findChildFiles(File::findDirectories, false);
+    subfolders.sort();
+    for (const auto& subfolder : subfolders)
+        menu.addSubMenu(subfolder.getFileName(), createCartridgeMenu(subfolder, cartridges));
+
+    auto files = folder.findChildFiles(File::findFiles, false, "*.syx;*.SYX");
+    files.sort();
+    for (const auto& file : files) {
+        Cartridge cartridge;
+        if (cartridge.load(file) == -1)
+            continue;
+
+        PopupMenu voices;
+        for (int voice = 0; voice < 32; ++voice)
+            voices.addItem(1 + cartridges.size() * 32 + voice, String(voice + 1) + ". " + cartridge.getProgramName(voice));
+        menu.addSubMenu(file.getFileNameWithoutExtension(), voices);
+        cartridges.add(file);
+    }
+    return menu;
+}
 } // namespace
 
 // The red of Dexed's lit LEDs (Light_28x28.png)
@@ -104,6 +133,50 @@ void CpuMeter::paint(Graphics& g) {
 }
 
 //==============================================================================
+void PresetSelector::setText(const String& newText) {
+    if (text != newText) {
+        text = newText;
+        repaint();
+    }
+}
+
+void PresetSelector::setDimmed(bool shouldBeDimmed) {
+    if (dimmed != shouldBeDimmed) {
+        dimmed = shouldBeDimmed;
+        repaint();
+    }
+}
+
+void PresetSelector::paint(Graphics& g) {
+    constexpr float arrowSize = 8.0f;
+    // (a drop-down box)
+    g.setColour(Colours::black.withAlpha(0.25f));
+    g.fillRoundedRectangle(getLocalBounds().toFloat(), 3.0f);
+
+    auto area = getLocalBounds().reduced(5, 0).toFloat();
+    const bool arrowOnLeft = justification.testFlags(Justification::right);
+    const auto arrowArea = arrowOnLeft ? area.removeFromLeft(arrowSize) : area.removeFromRight(arrowSize);
+    area = arrowOnLeft ? area.withTrimmedLeft(5.0f) : area.withTrimmedRight(5.0f);
+
+    const auto colour = Colours::white.withAlpha(dimmed ? 0.5f : 1.0f);
+    g.setColour(colour);
+    g.setFont(FontOptions(15.0f));
+    g.drawText(text, area, justification, true);
+
+    Path arrow;
+    const auto centre = arrowArea.getCentre();
+    arrow.addTriangle(centre.x - arrowSize * 0.5f, centre.y - 2.0f, centre.x + arrowSize * 0.5f, centre.y - 2.0f,
+                      centre.x, centre.y + 3.0f);
+    g.setColour(colour.withMultipliedAlpha(0.8f));
+    g.fillPath(arrow);
+}
+
+void PresetSelector::mouseDown(const MouseEvent&) {
+    if (onClick)
+        onClick();
+}
+
+//==============================================================================
 DisabledOverlay::DisabledOverlay() {
     // (blocks the mouse clicks to the editor below)
     setInterceptsMouseClicks(true, true);
@@ -164,12 +237,16 @@ AmbidexAudioProcessorEditor::AmbidexAudioProcessorEditor(AmbidexAudioProcessor& 
         };
         addAndMakeVisible(button);
 
-        // (clicks on the program name and mix share go to the editor, which activates the engine)
-        auto& programName = programNames[i];
-        programName.setJustificationType(i == 0 ? Justification::centredLeft : Justification::centredRight);
-        programName.setInterceptsMouseClicks(false, false);
-        addAndMakeVisible(programName);
+        auto& presetSelector = presetSelectors[i];
+        presetSelector.setTitle("Preset " + engineName);
+        presetSelector.setJustification(i == 0 ? Justification::centredLeft : Justification::centredRight);
+        presetSelector.onClick = [this, i] {
+            activateEngine(i);
+            showPresetMenu(i);
+        };
+        addAndMakeVisible(presetSelector);
 
+        // (clicks on the mix share go to the editor, which activates the engine)
         auto& mixShare = mixShares[i];
         mixShare.setTitle("Share of preset " + engineName + " in the mix");
         mixShare.setFont(FontOptions(11.0f));
@@ -181,8 +258,13 @@ AmbidexAudioProcessorEditor::AmbidexAudioProcessorEditor(AmbidexAudioProcessor& 
         dexedEditors[i].reset(ambidex.getEngine(i).createEditorIfNeeded());
         dexedEditors[i]->addComponentListener(this);
         dexedArea.addChildComponent(dexedEditors[i].get());
+        dexedEditorCustomisers[i] = std::make_unique<DexedEditorCustomiser>(
+            *dexedEditors[i], [this, i](Component& button) { showFmPatchMenu(i, button); });
     }
     dexedArea.addChildComponent(disabledOverlay);
+
+    fxPanel.setLookAndFeel(&lookAndFeel);
+    addAndMakeVisible(fxPanel);
 
     morphSlider.setSliderStyle(Slider::LinearHorizontal);
     morphSlider.setTextBoxStyle(Slider::NoTextBox, false, 0, 0);
@@ -210,6 +292,7 @@ AmbidexAudioProcessorEditor::~AmbidexAudioProcessorEditor() {
     stopTimer();
     for (int i = 0; i < numEngines; ++i) {
         dexedEditors[i]->removeComponentListener(this);
+        dexedEditorCustomisers[i].reset();
         // (what a plugin host does before deleting an editor)
         ambidex.getEngine(i).editorBeingDeleted(dexedEditors[i].get());
         dexedEditors[i].reset();
@@ -217,6 +300,7 @@ AmbidexAudioProcessorEditor::~AmbidexAudioProcessorEditor() {
     for (auto& button : engineButtons)
         button.setLookAndFeel(nullptr);
     morphSlider.setLookAndFeel(nullptr);
+    fxPanel.setLookAndFeel(nullptr);
 }
 
 //==============================================================================
@@ -249,14 +333,21 @@ void AmbidexAudioProcessorEditor::resized() {
     engineButtons[0].setBounds(panel.removeFromLeft(engineButtonWidth));
     engineButtons[1].setBounds(panel.removeFromRight(engineButtonWidth));
     for (int i = 0; i < numEngines; ++i) {
-        auto nameColumn = i == 0 ? panel.removeFromLeft(programNameWidth) : panel.removeFromRight(programNameWidth);
-        programNames[i].setBounds(nameColumn.removeFromTop(programNameHeight));
+        auto nameColumn = i == 0 ? panel.removeFromLeft(presetNameWidth) : panel.removeFromRight(presetNameWidth);
+        presetSelectors[i].setBounds(nameColumn.removeFromTop(presetNameHeight));
         mixShares[i].setBounds(nameColumn);
     }
     morphSlider.setBounds(panel.reduced(12, 0));
 
-    dexedArea.setBounds(bounds.removeFromTop(getDexedAreaHeight()));
+    auto middle = bounds.removeFromTop(getDexedAreaHeight());
+    dexedArea.setBounds(middle.removeFromLeft(dexedEditors[ambidex.editedEngine]->getWidth()));
     disabledOverlay.setBounds(dexedArea.getLocalBounds());
+
+    // (zoomed as the Dexed editor)
+    const float zoom = getZoomFactor();
+    fxPanel.setTransform(AffineTransform::scale(zoom));
+    fxPanel.setBounds(roundToInt((float) middle.getX() / zoom), roundToInt((float) middle.getY() / zoom),
+                      FxPanel::width, roundToInt((float) middle.getHeight() / zoom));
     keyboard.setBounds(bounds.reduced(4, 0).withTrimmedTop(1).withHeight(keyboardHeight));
 }
 
@@ -273,7 +364,7 @@ Rectangle<int> AmbidexAudioProcessorEditor::getMorphPanelBounds() const {
 
 Rectangle<int> AmbidexAudioProcessorEditor::getEngineArea(int index) const {
     return engineButtons[index].getBounds()
-        .getUnion(programNames[index].getBounds())
+        .getUnion(presetSelectors[index].getBounds())
         .getUnion(mixShares[index].getBounds())
         .expanded(engineFrameMargin);
 }
@@ -291,7 +382,7 @@ void AmbidexAudioProcessorEditor::showEngine(int index) {
 
     for (int i = 0; i < numEngines; ++i) {
         dexedEditors[i]->setVisible(i == index);
-        programNames[i].setColour(Label::textColourId, i == index ? Colours::white : Colours::white.withAlpha(0.5f));
+        presetSelectors[i].setDimmed(i != index);
     }
     disabledOverlay.setEngineName(index == 0 ? "A" : "B");
 
@@ -329,12 +420,13 @@ void AmbidexAudioProcessorEditor::updateEditability() {
         // (for the frame)
         repaint(getMorphPanelBounds());
     }
+
+    fxPanel.showValues(editable ? ambidex.editedEngine : -1);
 }
 
 int AmbidexAudioProcessorEditor::getDexedAreaHeight() const {
     const auto& editor = *dexedEditors[ambidex.editedEngine];
-    const float zoom = ambidex.getEngine(ambidex.editedEngine).getZoomFactor();
-    const int heightWithoutKeyboard = (int) ((DexedAudioProcessorEditor::WINDOW_SIZE_Y - keyboardAreaHeight) * zoom);
+    const int heightWithoutKeyboard = (int) ((DexedAudioProcessorEditor::WINDOW_SIZE_Y - keyboardAreaHeight) * getZoomFactor());
 
     // (the Dexed editor is already that small when its "show keyboard" option is off)
     return jmin(editor.getHeight(), heightWithoutKeyboard);
@@ -342,8 +434,12 @@ int AmbidexAudioProcessorEditor::getDexedAreaHeight() const {
 
 void AmbidexAudioProcessorEditor::updateSize() {
     const auto& editor = *dexedEditors[ambidex.editedEngine];
-    setSize(editor.getWidth(), topBarHeight + getDexedAreaHeight() + keyboardAreaHeight);
+    setSize(editor.getWidth() + roundToInt(FxPanel::width * getZoomFactor()), topBarHeight + getDexedAreaHeight() + keyboardAreaHeight);
     resized();
+}
+
+float AmbidexAudioProcessorEditor::getZoomFactor() const {
+    return ambidex.getEngine(ambidex.editedEngine).getZoomFactor();
 }
 
 void AmbidexAudioProcessorEditor::updateMixShares() {
@@ -365,8 +461,244 @@ void AmbidexAudioProcessorEditor::componentMovedOrResized(Component& component, 
 }
 
 void AmbidexAudioProcessorEditor::timerCallback() {
-    for (int i = 0; i < numEngines; ++i)
-        programNames[i].setText(ambidex.getEngine(i).activeProgram.getName(), dontSendNotification);
+    for (int i = 0; i < numEngines; ++i) {
+        const auto& name = ambidex.getPresetName(i);
+        presetSelectors[i].setText((name.isEmpty() ? String("Untitled") : name) + (ambidex.isPresetModified(i) ? " *" : ""));
+        dexedEditorCustomisers[i]->setFmPatchName(ambidex.getEngine(i).activeProgram.getName());
+    }
 
     cpuMeter.setLoad(ambidex.loadMeasurer.getLoadAsProportion());
+}
+
+//==============================================================================
+void AmbidexAudioProcessorEditor::showPresetMenu(int slot) {
+    enum { saveId = 1, saveAsNewId, renameId, revertId, deleteId, firstPresetId = 100 };
+
+    const auto& library = ambidex.getPresetLibrary();
+    const StringArray names = library.getNames();
+    const String current = ambidex.getPresetName(slot);
+    const bool inLibrary = library.contains(current);
+    const bool modified = ambidex.isPresetModified(slot);
+
+    PopupMenu menu;
+    menu.addSectionHeader("Preset " + engineNames[slot]);
+    for (int i = 0; i < names.size(); ++i)
+        menu.addItem(PopupMenu::Item(names[i]).setID(firstPresetId + i).setTicked(names[i] == current));
+    menu.addSeparator();
+    menu.addItem(PopupMenu::Item("Save").setID(saveId).setEnabled(inLibrary && modified));
+    menu.addItem(saveAsNewId, "Save as new preset...");
+    menu.addItem(PopupMenu::Item("Rename...").setID(renameId).setEnabled(inLibrary));
+    menu.addItem(PopupMenu::Item("Revert to saved").setID(revertId).setEnabled(inLibrary && modified));
+    menu.addItem(PopupMenu::Item("Delete...").setID(deleteId).setEnabled(inLibrary));
+
+    Component::SafePointer<AmbidexAudioProcessorEditor> safeThis(this);
+    menu.showMenuAsync(PopupMenu::Options().withTargetComponent(&presetSelectors[slot]),
+                       [safeThis, slot, names, current](int result) {
+        if (safeThis == nullptr || result == 0)
+            return;
+        auto& editor = *safeThis;
+
+        if (result >= firstPresetId) {
+            editor.choosePreset(slot, names[result - firstPresetId]);
+        } else if (result == saveId) {
+            editor.savePreset(slot, current);
+        } else if (result == saveAsNewId) {
+            editor.savePresetAsNew(slot);
+        } else if (result == renameId) {
+            editor.renamePreset(slot);
+        } else if (result == revertId) {
+            editor.confirm("Revert to saved", "Discard the changes made to \"" + current + "\"?", "Revert",
+                           [safeThis, slot, current] {
+                if (safeThis != nullptr)
+                    safeThis->loadPresetFromLibrary(slot, current);
+            });
+        } else if (result == deleteId) {
+            editor.deletePreset(slot);
+        }
+    });
+}
+
+void AmbidexAudioProcessorEditor::choosePreset(int slot, const String& name) {
+    if (!ambidex.isPresetModified(slot)) {
+        loadPresetFromLibrary(slot, name);
+        return;
+    }
+
+    const auto& current = ambidex.getPresetName(slot);
+    Component::SafePointer<AmbidexAudioProcessorEditor> safeThis(this);
+    confirm("Unsaved changes",
+            "Preset " + engineNames[slot] + " (\"" + (current.isEmpty() ? String("Untitled") : current)
+                + "\") has unsaved changes. Discard them, and load \"" + name + "\"?",
+            "Discard and load", [safeThis, slot, name] {
+        if (safeThis != nullptr)
+            safeThis->loadPresetFromLibrary(slot, name);
+    });
+}
+
+void AmbidexAudioProcessorEditor::loadPresetFromLibrary(int slot, const String& name) {
+    AmbidexPreset preset;
+    if (!ambidex.getPresetLibrary().load(name, preset)) {
+        showError("Preset not loaded", "Unable to load the preset \"" + name + "\".");
+        return;
+    }
+    ambidex.loadPreset(slot, preset);
+    presetChanged(slot);
+}
+
+void AmbidexAudioProcessorEditor::savePreset(int slot, const String& name) {
+    AmbidexPreset preset = ambidex.capturePreset(slot);
+    preset.name = name;
+    if (!ambidex.getPresetLibrary().save(preset)) {
+        showError("Preset not saved", "Unable to save the preset \"" + name + "\".");
+        return;
+    }
+    ambidex.setPresetSaved(slot, name);
+
+    // (the other slot may hold the same preset: it now differs from the library)
+    const int otherSlot = 1 - slot;
+    if (ambidex.getPresetName(otherSlot) == name)
+        ambidex.setPresetUnsaved(otherSlot);
+    presetChanged(slot);
+}
+
+void AmbidexAudioProcessorEditor::savePresetAsNew(int slot) {
+    const auto& current = ambidex.getPresetName(slot);
+    const String initialName = current.isNotEmpty() ? current : ambidex.getEngine(slot).activeProgram.getName().trim();
+
+    Component::SafePointer<AmbidexAudioProcessorEditor> safeThis(this);
+    askForPresetName("Save as new preset", initialName, [safeThis, slot](const String& typedName) {
+        if (safeThis == nullptr)
+            return;
+        auto& editor = *safeThis;
+
+        const String name = PresetLibrary::toValidName(typedName);
+        if (name.isEmpty()) {
+            editor.showError("Preset not saved", "Please enter a name.");
+        } else if (editor.ambidex.getPresetLibrary().contains(name)) {
+            editor.confirm("Replace preset", "A preset named \"" + name + "\" already exists. Replace it?", "Replace",
+                           [safeThis, slot, name] {
+                if (safeThis != nullptr)
+                    safeThis->savePreset(slot, name);
+            });
+        } else {
+            editor.savePreset(slot, name);
+        }
+    });
+}
+
+void AmbidexAudioProcessorEditor::renamePreset(int slot) {
+    const String oldName = ambidex.getPresetName(slot);
+
+    Component::SafePointer<AmbidexAudioProcessorEditor> safeThis(this);
+    askForPresetName("Rename preset", oldName, [safeThis, oldName](const String& typedName) {
+        if (safeThis == nullptr)
+            return;
+        auto& editor = *safeThis;
+
+        const String newName = PresetLibrary::toValidName(typedName);
+        if (newName.isEmpty() || newName == oldName)
+            return;
+        if (editor.ambidex.getPresetLibrary().contains(newName)) {
+            editor.showError("Preset not renamed", "A preset named \"" + newName + "\" already exists.");
+            return;
+        }
+        if (!editor.ambidex.getPresetLibrary().rename(oldName, newName)) {
+            editor.showError("Preset not renamed", "Unable to rename the preset \"" + oldName + "\".");
+            return;
+        }
+        for (int s = 0; s < numEngines; ++s)
+            if (editor.ambidex.getPresetName(s) == oldName)
+                editor.ambidex.setPresetName(s, newName);
+        editor.timerCallback();
+    });
+}
+
+void AmbidexAudioProcessorEditor::deletePreset(int slot) {
+    const String name = ambidex.getPresetName(slot);
+
+    Component::SafePointer<AmbidexAudioProcessorEditor> safeThis(this);
+    confirm("Delete preset",
+            "Delete the preset \"" + name + "\" from the library? Preset " + engineNames[slot]
+                + " keeps its sound, as an unsaved preset.",
+            "Delete", [safeThis, name] {
+        if (safeThis == nullptr)
+            return;
+        auto& editor = *safeThis;
+
+        if (!editor.ambidex.getPresetLibrary().remove(name)) {
+            editor.showError("Preset not deleted", "Unable to delete the preset \"" + name + "\".");
+            return;
+        }
+        for (int s = 0; s < numEngines; ++s)
+            if (editor.ambidex.getPresetName(s) == name)
+                editor.ambidex.setPresetUnsaved(s);
+        editor.timerCallback();
+    });
+}
+
+void AmbidexAudioProcessorEditor::presetChanged(int slot) {
+    // (the FX knobs show the new values, if this slot is the one edited)
+    if (slot == ambidex.editedEngine)
+        updateEditability();
+    timerCallback();
+}
+
+void AmbidexAudioProcessorEditor::showFmPatchMenu(int slot, Component& button) {
+    auto cartridges = std::make_shared<Array<File>>();
+    PopupMenu menu = createCartridgeMenu(DexedAudioProcessor::dexedCartDir, *cartridges);
+    if (cartridges->isEmpty()) {
+        showError("No FM patches", "No cartridges found in " + DexedAudioProcessor::dexedCartDir.getFullPathName() + ".");
+        return;
+    }
+
+    Component::SafePointer<AmbidexAudioProcessorEditor> safeThis(this);
+    menu.showMenuAsync(PopupMenu::Options().withTargetComponent(&button), [safeThis, slot, cartridges](int result) {
+        if (safeThis == nullptr || result <= 0)
+            return;
+
+        Cartridge cartridge;
+        if (cartridge.load((*cartridges)[(result - 1) / 32]) == -1)
+            return;
+        const Program program = cartridge.unpackProgram((result - 1) % 32);
+        safeThis->ambidex.loadFmPatch(slot, program.getRawData());
+        safeThis->timerCallback();
+    });
+}
+
+//==============================================================================
+void AmbidexAudioProcessorEditor::askForPresetName(const String& title, const String& initialName,
+                                                   std::function<void(const String&)> onOk) {
+    auto* window = new AlertWindow(title, "Preset name:", MessageBoxIconType::NoIcon, this);
+    window->addTextEditor("name", initialName);
+    window->addButton("OK", 1, KeyPress(KeyPress::returnKey));
+    window->addButton("Cancel", 0, KeyPress(KeyPress::escapeKey));
+    window->enterModalState(true, ModalCallbackFunction::create([window, onOk](int result) {
+        if (result == 1)
+            onOk(window->getTextEditorContents("name"));
+    }), true);
+}
+
+void AmbidexAudioProcessorEditor::confirm(const String& title, const String& message, const String& okText,
+                                          std::function<void()> onOk) {
+    AlertWindow::showAsync(MessageBoxOptions()
+                               .withIconType(MessageBoxIconType::QuestionIcon)
+                               .withTitle(title)
+                               .withMessage(message)
+                               .withButton(okText)
+                               .withButton("Cancel")
+                               .withAssociatedComponent(this),
+                           [onOk](int result) {
+        if (result == 1)
+            onOk();
+    });
+}
+
+void AmbidexAudioProcessorEditor::showError(const String& title, const String& message) {
+    AlertWindow::showAsync(MessageBoxOptions()
+                               .withIconType(MessageBoxIconType::WarningIcon)
+                               .withTitle(title)
+                               .withMessage(message)
+                               .withButton("OK")
+                               .withAssociatedComponent(this),
+                           nullptr);
 }

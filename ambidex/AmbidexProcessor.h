@@ -5,11 +5,15 @@
 
 #include <JuceHeader.h>
 
+#include "FxChain.h"
+#include "PresetLibrary.h"
 #include "PluginProcessor.h"
 
 /**
  * Runs two unmodified Dexed engines (A and B) on the same MIDI input, and
  * crossfades their outputs with the "morph" parameter: 0 = only A, 1 = only B.
+ * The mix then goes through the FX chain, whose parameters are also morphed
+ * between their A and B values.
  */
 class AmbidexAudioProcessor : public AudioProcessor {
 public:
@@ -47,6 +51,38 @@ public:
     //==============================================================================
     DexedAudioProcessor& getEngine(int index) { return *engines[index]; }
 
+    /** FX parameter values of an engine (thread safe). */
+    float getFxValue(int engine, int param) const { return fxValues[engine][param]; }
+    void setFxValue(int engine, int param, float value) {
+        const auto& range = fx::getParamInfo(param).range;
+        fxValues[engine][param] = jlimit(range.start, range.end, value);
+    }
+    /** FX parameter value heard at the current morph position, normalised (0..1). */
+    float getMorphedFxValueNormalised(int param) const;
+
+    // Bypasses the whole FX chain, to listen to the presets dry (not saved)
+    std::atomic<bool> fxBypassed { false };
+
+    //==============================================================================
+    // Preset slots (A and B), message thread only. Each slot holds a preset from
+    // the library, and its unsaved edits.
+    PresetLibrary& getPresetLibrary() { return *presetLibrary; }
+
+    /** The slot's preset, as it is now (with its edits). */
+    AmbidexPreset capturePreset(int slot) const;
+    void loadPreset(int slot, const AmbidexPreset& preset);
+    /** Replaces the DX7 voice of the slot's preset (155 bytes, unpacked). */
+    void loadFmPatch(int slot, const uint8_t* voice);
+
+    /** Name of the library preset the slot comes from (may have been deleted). */
+    const String& getPresetName(int slot) const { return presetNames[slot]; }
+    void setPresetName(int slot, const String& name);
+    bool isPresetModified(int slot) const;
+    /** After the slot's preset has been saved to the library, under this name. */
+    void setPresetSaved(int slot, const String& name);
+    /** Marks the slot as modified, until it's saved or loaded. */
+    void setPresetUnsaved(int slot);
+
     /** Equal-power crossfade gains for a morph position in [0, 1]. */
     static std::pair<float, float> getMorphGains(float morph);
 
@@ -70,6 +106,15 @@ private:
     MidiBuffer engineBMidi;
 
     SmoothedValue<float> smoothedMorph;
+
+    std::atomic<float> fxValues[numEngines][fx::numParams];
+    FxChain fxChain;
+
+    std::unique_ptr<PresetLibrary> presetLibrary;
+    String presetNames[numEngines];
+    // Signature of each slot when its preset was loaded or saved (empty = modified)
+    std::vector<float> baselines[numEngines];
+    std::vector<float> getSignature(int slot) const;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AmbidexAudioProcessor)
 };

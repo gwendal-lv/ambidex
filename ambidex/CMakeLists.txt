@@ -24,6 +24,11 @@ juce_generate_juce_header(Ambidex)
 target_sources(Ambidex PRIVATE
     AmbidexProcessor.cpp
     AmbidexEditor.cpp
+    DexedEditorCustomiser.cpp
+    FxChain.cpp
+    FxPanel.cpp
+    FxParameters.cpp
+    PresetLibrary.cpp
 )
 
 # Dexed's PluginProcessor.cpp defines createPluginFilter(), the function JUCE
@@ -36,6 +41,7 @@ set_source_files_properties(${PROJECT_SOURCE_DIR}/source/PluginProcessor.cpp PRO
 target_link_libraries(Ambidex
 PRIVATE
     dexed
+    juce::juce_dsp
 PUBLIC
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags

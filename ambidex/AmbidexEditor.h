@@ -6,6 +6,8 @@
 #include <JuceHeader.h>
 
 #include "AmbidexProcessor.h"
+#include "DexedEditorCustomiser.h"
+#include "FxPanel.h"
 #include "ui/DXLookNFeel.h"
 
 /** Dexed's look, plus a visible toggle state on buttons and a drawn track on linear sliders. */
@@ -33,6 +35,25 @@ private:
 };
 
 //==============================================================================
+/** Name of a slot's preset, with a drop-down arrow: opens the preset menu. */
+class PresetSelector : public Component {
+public:
+    std::function<void()> onClick;
+
+    void setText(const String& newText);
+    void setJustification(Justification newJustification) { justification = newJustification; }
+    void setDimmed(bool shouldBeDimmed);
+
+    void paint(Graphics& g) override;
+    void mouseDown(const MouseEvent&) override;
+
+private:
+    String text;
+    Justification justification = Justification::centredLeft;
+    bool dimmed = false;
+};
+
+//==============================================================================
 /** Dims the Dexed editor and blocks its mouse input, while it can't be edited. */
 class DisabledOverlay : public Component {
 public:
@@ -47,7 +68,8 @@ private:
 //==============================================================================
 /**
  * Top bar with the A/B buttons and the morph slider, the original Dexed editor
- * of the engine being edited, and a keyboard playing both engines.
+ * of the engine being edited with the FX panel on its right, and a keyboard
+ * playing both engines.
  */
 class AmbidexAudioProcessorEditor : public AudioProcessorEditor,
                                     private ComponentListener,
@@ -72,10 +94,27 @@ private:
     void updateSize();
     void updateMixShares();
     int getDexedAreaHeight() const;
+    // Dexed's zoom factor (applied to the FX panel too)
+    float getZoomFactor() const;
     // Rounded panel holding the A/B buttons, program names and morph slider
     Rectangle<int> getMorphPanelBounds() const;
-    // Button, program name and mix share of an engine (framed when edited)
+    // Button, preset name and mix share of an engine (framed when edited)
     Rectangle<int> getEngineArea(int index) const;
+
+    // Presets (see doc/Presets.md)
+    void showPresetMenu(int slot);
+    void choosePreset(int slot, const String& name);
+    void loadPresetFromLibrary(int slot, const String& name);
+    void savePreset(int slot, const String& name);
+    void savePresetAsNew(int slot);
+    void renamePreset(int slot);
+    void deletePreset(int slot);
+    void presetChanged(int slot);
+    void showFmPatchMenu(int slot, Component& button);
+    // Asynchronous dialogs
+    void askForPresetName(const String& title, const String& initialName, std::function<void(const String&)> onOk);
+    void confirm(const String& title, const String& message, const String& okText, std::function<void()> onOk);
+    void showError(const String& title, const String& message);
 
     void componentMovedOrResized(Component& component, bool wasMoved, bool wasResized) override;
     void timerCallback() override;
@@ -88,7 +127,7 @@ private:
     Label title;
     CpuMeter cpuMeter;
     TextButton engineButtons[numEngines];
-    Label programNames[numEngines];
+    PresetSelector presetSelectors[numEngines];
     // Power of each engine in the mix, in percent
     Label mixShares[numEngines];
     Slider morphSlider;
@@ -97,7 +136,10 @@ private:
     // Shows the top part of the Dexed editors, hiding their own keyboard
     Component dexedArea;
     std::unique_ptr<AudioProcessorEditor> dexedEditors[numEngines];
+    std::unique_ptr<DexedEditorCustomiser> dexedEditorCustomisers[numEngines];
     DisabledOverlay disabledOverlay;
+
+    FxPanel fxPanel { ambidex };
 
     MidiKeyboardComponent keyboard;
 
